@@ -28,6 +28,7 @@ export default function Login() {
       toast.success('Welcome back!');
       navigate('/');
     } catch (e) {
+      console.error('Login error:', e.code, e.message);
       const msg =
         e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password'
           ? 'Invalid email or password'
@@ -35,7 +36,11 @@ export default function Login() {
           ? 'No account found with this email'
           : e.code === 'auth/too-many-requests'
           ? 'Too many attempts. Try again later.'
-          : 'Sign in failed. Please try again.';
+          : e.code === 'auth/invalid-api-key'
+          ? 'Firebase config error. Contact admin.'
+          : e.code === 'auth/network-request-failed'
+          ? 'Network error. Check your connection.'
+          : `Sign in failed (${e.code})`;
       toast.error(msg);
     }
   };
