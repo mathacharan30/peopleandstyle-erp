@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
+  CalendarDays,
   UserCheck,
   FileText,
   Wallet,
