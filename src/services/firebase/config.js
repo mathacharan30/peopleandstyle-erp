@@ -3,12 +3,12 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: "AIzaSyBIUSgjXdq14F6XyciW0_GqAjFSVNquQRQ",
+  authDomain: "peopleandstyle-erp.firebaseapp.com",
+  projectId: "peopleandstyle-erp",
+  storageBucket: "peopleandstyle-erp.firebasestorage.app",
+  messagingSenderId: "324963873691",
+  appId: "1:324963873691:web:3da8ad9f8ca69a089fe73e",
 };
 
 const app = initializeApp(firebaseConfig);
