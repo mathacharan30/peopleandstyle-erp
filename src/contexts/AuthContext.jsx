@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const unsubscribe = onAuthChange(async (u) => {
+      setLoading(true); // hold spinner while we fetch role
       if (u) {
         try {
           const snap = await getDoc(doc(db, 'users', u.uid));
@@ -21,7 +22,6 @@ export function AuthProvider({ children }) {
             setRole(data.role || 'admin');
             setProfile(data);
           } else {
-            // No users doc → treat as admin (first/existing admin account)
             setRole('admin');
             setProfile(null);
           }
