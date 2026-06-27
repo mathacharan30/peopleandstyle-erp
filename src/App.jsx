@@ -8,6 +8,7 @@ import Bookings from './pages/Bookings';
 import Finance from './pages/Finance';
 import Employees from './pages/Employees';
 import Tasks from './pages/Tasks';
+import Collaborations from './pages/Collaborations';
 import ContentPlanner from './pages/ContentPlanner';
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="finance" element={<Finance />} />
           <Route path="employees" element={<Employees />} />
           <Route path="tasks" element={<Tasks />} />
+          <Route path="collaborations" element={<Collaborations />} />
           <Route path="content" element={<ContentPlanner />} />
         </Route>
       </Route>
