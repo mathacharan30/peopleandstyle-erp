@@ -7,7 +7,7 @@ import {
   FileText,
   Wallet,
   ClipboardList,
-  Handshake,
+  Link2,
   X,
 } from 'lucide-react';
 
@@ -16,7 +16,7 @@ const navItems = [
   { to: '/customers', icon: Users, label: 'Customers' },
   { to: '/bookings', icon: CalendarDays, label: 'Bookings' },
   { to: '/finance', icon: Wallet, label: 'Finance' },
-  { to: '/collaborations', icon: Handshake, label: 'Collaborations' },
+  { to: '/collaborations', icon: Link2, label: 'Collaborations' },
   { to: '/employees', icon: UserCheck, label: 'Employees' },
   { to: '/tasks', icon: ClipboardList, label: 'Tasks' },
   { to: '/content', icon: FileText, label: 'Content Planner' },
