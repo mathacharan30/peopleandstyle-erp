@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
-import { Plus, Pencil, Trash2, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
+import { Plus, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ShoppingBag } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useFirestore } from '../hooks/useFirestore';
 import { filterBySearch, formatDate, formatCurrency } from '../utils/helpers';
@@ -16,7 +16,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 
 const INCOME_SOURCES = ['Booking Rent', 'Commission', 'Deposit Received', 'Advance', 'Other'];
-const EXPENSE_CATEGORIES = ['Rent', 'Utilities', 'Staff Salary', 'Marketing', 'Maintenance', 'Travel', 'Food', 'Purchase', 'Other'];
+const EXPENSE_CATEGORIES = ['Vendor Payment', 'Deposit Refund', 'Rent', 'Utilities', 'Staff Salary', 'Marketing', 'Maintenance', 'Travel', 'Food', 'Purchase', 'Commission Paid', 'Other'];
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Card'];
 
 function SummaryCard({ icon: Icon, label, value, color }) {
@@ -304,35 +304,172 @@ function ExpenseTab() {
   );
 }
 
+const SALE_PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Card'];
+
+function SaleFormInline({ defaultValues, onSubmit, onCancel, loading }) {
+  const { register, handleSubmit, formState: { errors } } = useForm({ defaultValues });
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Input label="Date" type="date" required error={errors.date?.message}
+          {...register('date', { required: 'Date is required' })} />
+        <Input label="Customer Name" placeholder="Customer name" {...register('customerName')} />
+        <div className="sm:col-span-2">
+          <Input label="Item / Product Name" placeholder="Product sold" required error={errors.itemName?.message}
+            {...register('itemName', { required: 'Item name is required' })} />
+        </div>
+        <Input label="Quantity" type="number" placeholder="1"
+          {...register('quantity', { min: { value: 1 } })} />
+        <Input label="Unit Price (₹)" type="number" placeholder="0"
+          {...register('unitPrice', { min: { value: 0 } })} />
+        <Input label="Total Amount (₹)" type="number" placeholder="0" required error={errors.totalAmount?.message}
+          {...register('totalAmount', { required: 'Total amount is required', min: { value: 1, message: 'Must be > 0' } })} />
+        <Select label="Payment Method" options={SALE_PAYMENT_METHODS} placeholder="Select method"
+          {...register('paymentMethod')} />
+      </div>
+      <Textarea label="Description / Notes" placeholder="Notes..." {...register('description')} />
+      <div className="flex gap-3 pt-2">
+        <Button variant="secondary" className="flex-1" type="button" onClick={onCancel}>Cancel</Button>
+        <Button className="flex-1" type="submit" loading={loading}>
+          {defaultValues?.id ? 'Update' : 'Add'} Sale
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function SalesTab() {
+  const { data, loading, add, update, remove } = useFirestore('sales');
+  const [search, setSearch] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const filtered = filterBySearch(data, search, ['customerName', 'itemName', 'description', 'paymentMethod']);
+
+  const openAdd = () => { setEditing(null); setModalOpen(true); };
+  const openEdit = (r) => { setEditing(r); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setEditing(null); };
+
+  const handleSubmit = async (formData) => {
+    setSubmitting(true);
+    try {
+      const payload = {
+        ...formData,
+        quantity: Number(formData.quantity) || 1,
+        unitPrice: Number(formData.unitPrice) || 0,
+        totalAmount: Number(formData.totalAmount) || 0,
+      };
+      editing ? await update(editing.id, payload) : await add(payload);
+      toast.success(editing ? 'Sale updated' : 'Sale added');
+      closeModal();
+    } catch { toast.error('Something went wrong'); }
+    finally { setSubmitting(false); }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await remove(deleteTarget.id);
+      toast.success('Sale deleted');
+      setDeleteTarget(null);
+    } catch { toast.error('Delete failed'); }
+    finally { setDeleting(false); }
+  };
+
+  return (
+    <>
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search sales..." />
+        <Button onClick={openAdd}>
+          <Plus size={16} /> Add Sale
+        </Button>
+      </div>
+
+      {loading ? <LoadingSpinner /> : filtered.length === 0 ? (
+        <EmptyState
+          title="No sales records"
+          description={search ? 'Try a different search' : 'Record your first sale'}
+          action={!search && <Button onClick={openAdd} size="sm"><Plus size={14} /> Add Sale</Button>}
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                {['Date', 'Customer', 'Item', 'Qty', 'Payment', 'Amount', 'Actions'].map((h) => (
+                  <th key={h} className={`px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap ${h === 'Actions' ? 'text-right' : ''}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filtered.map((r) => (
+                <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{formatDate(r.date)}</td>
+                  <td className="px-5 py-3 text-gray-700">{r.customerName || '—'}</td>
+                  <td className="px-5 py-3 font-medium text-gray-800">
+                    <div>{r.itemName}</div>
+                    {r.description && <div className="text-xs text-gray-400 truncate max-w-xs">{r.description}</div>}
+                  </td>
+                  <td className="px-5 py-3 text-gray-600">{r.quantity || 1}</td>
+                  <td className="px-5 py-3 text-gray-600">{r.paymentMethod || '—'}</td>
+                  <td className="px-5 py-3 font-semibold text-indigo-600 whitespace-nowrap">{formatCurrency(r.totalAmount)}</td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"><Pencil size={15} /></button>
+                      <button onClick={() => setDeleteTarget(r)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 size={15} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Modal open={modalOpen} onClose={closeModal} title={editing ? 'Edit Sale' : 'Add Sale'} size="md">
+        <SaleFormInline defaultValues={editing} onSubmit={handleSubmit} onCancel={closeModal} loading={submitting} />
+      </Modal>
+      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} loading={deleting}
+        title="Delete Sale" message="Remove this sale record? This cannot be undone." />
+    </>
+  );
+}
+
 export default function Finance() {
   const [tab, setTab] = useState('income');
   const { data: incomeData } = useFirestore('income');
   const { data: expenseData } = useFirestore('expenses');
+  const { data: salesData } = useFirestore('sales');
 
   const totalIncome = useMemo(() => incomeData.reduce((s, r) => s + (Number(r.amount) || 0), 0), [incomeData]);
   const totalExpenses = useMemo(() => expenseData.reduce((s, r) => s + (Number(r.amount) || 0), 0), [expenseData]);
-  const netBalance = totalIncome - totalExpenses;
+  const totalSales = useMemo(() => salesData.reduce((s, r) => s + (Number(r.totalAmount) || 0), 0), [salesData]);
+  const netBalance = totalIncome + totalSales - totalExpenses;
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Finance</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Track income and expenses</p>
+        <p className="text-sm text-gray-500 mt-0.5">Track income, sales, and expenses</p>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard icon={TrendingUp} label="Total Income" value={formatCurrency(totalIncome)} color="green" />
+        <SummaryCard icon={ShoppingBag} label="Total Sales" value={formatCurrency(totalSales)} color="indigo" />
         <SummaryCard icon={TrendingDown} label="Total Expenses" value={formatCurrency(totalExpenses)} color="red" />
-        <SummaryCard icon={Wallet} label="Net Balance" value={formatCurrency(netBalance)} color="indigo" />
+        <SummaryCard icon={Wallet} label="Net Balance" value={formatCurrency(netBalance)} color="green" />
       </div>
 
       {/* Tabs */}
       <div className="bg-white rounded-xl border border-gray-100">
-        <div className="flex border-b border-gray-100">
+        <div className="flex border-b border-gray-100 overflow-x-auto">
           <button
             onClick={() => setTab('income')}
-            className={`flex items-center gap-2 px-6 py-3.5 text-sm font-medium border-b-2 transition-colors
+            className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
               ${tab === 'income' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
             <TrendingUp size={15} /> Income
@@ -341,8 +478,18 @@ export default function Finance() {
             </span>
           </button>
           <button
+            onClick={() => setTab('sales')}
+            className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
+              ${tab === 'sales' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            <ShoppingBag size={15} /> Sales
+            <span className={`ml-1 px-1.5 py-0.5 rounded-full text-xs ${tab === 'sales' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>
+              {salesData.length}
+            </span>
+          </button>
+          <button
             onClick={() => setTab('expenses')}
-            className={`flex items-center gap-2 px-6 py-3.5 text-sm font-medium border-b-2 transition-colors
+            className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
               ${tab === 'expenses' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
             <TrendingDown size={15} /> Expenses
@@ -352,7 +499,9 @@ export default function Finance() {
           </button>
         </div>
 
-        {tab === 'income' ? <IncomeTab /> : <ExpenseTab />}
+        {tab === 'income' && <IncomeTab />}
+        {tab === 'sales' && <SalesTab />}
+        {tab === 'expenses' && <ExpenseTab />}
       </div>
     </div>
   );

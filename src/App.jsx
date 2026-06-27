@@ -11,6 +11,7 @@ import Employees from './pages/Employees';
 import Tasks from './pages/Tasks';
 import Collaborations from './pages/Collaborations';
 import ContentPlanner from './pages/ContentPlanner';
+import Sales from './pages/Sales';
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="collaborations" element={<Collaborations />} />
             <Route path="employees" element={<Employees />} />
             <Route path="content" element={<ContentPlanner />} />
+            <Route path="sales" element={<Sales />} />
           </Route>
           {/* Shared route — employees see filtered tasks, admins see all */}
           <Route path="tasks" element={<Tasks />} />
