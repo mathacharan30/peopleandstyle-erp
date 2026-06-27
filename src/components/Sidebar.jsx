@@ -5,6 +5,7 @@ import {
   CalendarDays,
   UserCheck,
   FileText,
+  Wallet,
   X,
 } from 'lucide-react';
 
@@ -12,6 +13,7 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/customers', icon: Users, label: 'Customers' },
   { to: '/bookings', icon: CalendarDays, label: 'Bookings' },
+  { to: '/finance', icon: Wallet, label: 'Finance' },
   { to: '/interns', icon: UserCheck, label: 'Interns' },
   { to: '/content', icon: FileText, label: 'Content Planner' },
 ];

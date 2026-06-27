@@ -7,6 +7,7 @@ import Customers from './pages/Customers';
 import Bookings from './pages/Bookings';
 import Interns from './pages/Interns';
 import ContentPlanner from './pages/ContentPlanner';
+import Finance from './pages/Finance';
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="customers" element={<Customers />} />
           <Route path="bookings" element={<Bookings />} />
+          <Route path="finance" element={<Finance />} />
           <Route path="interns" element={<Interns />} />
           <Route path="content" element={<ContentPlanner />} />
         </Route>

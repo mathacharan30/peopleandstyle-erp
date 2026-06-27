@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CalendarDays, Truck, RotateCcw, CheckCircle2, TrendingUp } from 'lucide-react';
+import { CalendarDays, Truck, RotateCcw, CheckCircle2, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
 import { formatCurrency, formatDate } from '../utils/helpers';
 import Badge from '../components/ui/Badge';
@@ -11,6 +11,7 @@ function StatCard({ icon: Icon, label, value, color, subLabel }) {
     blue: 'bg-blue-50 text-blue-600',
     yellow: 'bg-yellow-50 text-yellow-600',
     green: 'bg-green-50 text-green-600',
+    red: 'bg-red-50 text-red-600',
   };
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4">
@@ -28,6 +29,8 @@ function StatCard({ icon: Icon, label, value, color, subLabel }) {
 
 export default function Dashboard() {
   const { data: bookings, loading } = useFirestore('bookings');
+  const { data: incomeData } = useFirestore('income');
+  const { data: expenseData } = useFirestore('expenses');
 
   const stats = useMemo(() => {
     const total = bookings.length;
@@ -36,6 +39,9 @@ export default function Dashboard() {
     const returned = bookings.filter((b) => b.bookingStatus === 'Returned').length;
     return { total, pending, delivered, returned };
   }, [bookings]);
+
+  const totalIncome = useMemo(() => incomeData.reduce((s, r) => s + (Number(r.amount) || 0), 0), [incomeData]);
+  const totalExpenses = useMemo(() => expenseData.reduce((s, r) => s + (Number(r.amount) || 0), 0), [expenseData]);
 
   const recent = useMemo(() => bookings.slice(0, 5), [bookings]);
 
@@ -48,12 +54,19 @@ export default function Dashboard() {
         <p className="text-sm text-gray-500 mt-0.5">Overview of your rental business</p>
       </div>
 
-      {/* Stat cards */}
+      {/* Booking stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard icon={CalendarDays} label="Total Bookings" value={stats.total} color="indigo" />
         <StatCard icon={Truck} label="Pending Deliveries" value={stats.pending} color="yellow" />
         <StatCard icon={RotateCcw} label="Pending Returns" value={stats.delivered} color="blue" />
         <StatCard icon={CheckCircle2} label="Completed Orders" value={stats.returned} color="green" />
+      </div>
+
+      {/* Finance summary */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard icon={TrendingUp} label="Total Income" value={formatCurrency(totalIncome)} color="green" />
+        <StatCard icon={TrendingDown} label="Total Expenses" value={formatCurrency(totalExpenses)} color="red" />
+        <StatCard icon={Wallet} label="Net Balance" value={formatCurrency(totalIncome - totalExpenses)} color="indigo" />
       </div>
 
       {/* Recent bookings */}
