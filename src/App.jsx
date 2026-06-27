@@ -5,9 +5,10 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
 import Bookings from './pages/Bookings';
-import Interns from './pages/Interns';
-import ContentPlanner from './pages/ContentPlanner';
 import Finance from './pages/Finance';
+import Employees from './pages/Employees';
+import Tasks from './pages/Tasks';
+import ContentPlanner from './pages/ContentPlanner';
 
 export default function App() {
   return (
@@ -19,7 +20,8 @@ export default function App() {
           <Route path="customers" element={<Customers />} />
           <Route path="bookings" element={<Bookings />} />
           <Route path="finance" element={<Finance />} />
-          <Route path="interns" element={<Interns />} />
+          <Route path="employees" element={<Employees />} />
+          <Route path="tasks" element={<Tasks />} />
           <Route path="content" element={<ContentPlanner />} />
         </Route>
       </Route>
