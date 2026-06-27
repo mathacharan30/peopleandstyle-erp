@@ -98,7 +98,7 @@ export default function Sidebar({ open, onClose }) {
         </nav>
 
         <div className="px-5 py-4 border-t border-gray-100">
-          <p className="text-xs text-gray-400">© 2025 Rental ERP</p>
+          <p className="text-xs text-gray-400">© 2026 People and Style</p>
         </div>
       </aside>
     </>
