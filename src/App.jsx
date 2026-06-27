@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 import MainLayout from './layouts/MainLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -17,14 +18,18 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="customers" element={<Customers />} />
-          <Route path="bookings" element={<Bookings />} />
-          <Route path="finance" element={<Finance />} />
-          <Route path="employees" element={<Employees />} />
+          {/* Admin-only routes */}
+          <Route element={<AdminRoute />}>
+            <Route index element={<Dashboard />} />
+            <Route path="customers" element={<Customers />} />
+            <Route path="bookings" element={<Bookings />} />
+            <Route path="finance" element={<Finance />} />
+            <Route path="collaborations" element={<Collaborations />} />
+            <Route path="employees" element={<Employees />} />
+            <Route path="content" element={<ContentPlanner />} />
+          </Route>
+          {/* Shared route — employees see filtered tasks, admins see all */}
           <Route path="tasks" element={<Tasks />} />
-          <Route path="collaborations" element={<Collaborations />} />
-          <Route path="content" element={<ContentPlanner />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

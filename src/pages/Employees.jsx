@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '../services/firebase/config';
+import { createEmployeeAccount } from '../services/firebase/auth';
 import { useFirestore } from '../hooks/useFirestore';
 import { filterBySearch } from '../utils/helpers';
 import Button from '../components/ui/Button';
@@ -18,7 +21,9 @@ import EmptyState from '../components/ui/EmptyState';
 const STATUS_OPTIONS = ['Active', 'Inactive'];
 
 function EmployeeForm({ defaultValues, onSubmit, onCancel, loading }) {
+  const isEditing = !!defaultValues?.id;
   const { register, handleSubmit, formState: { errors } } = useForm({ defaultValues });
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -35,14 +40,55 @@ function EmployeeForm({ defaultValues, onSubmit, onCancel, loading }) {
             pattern: { value: /^[0-9+\s()-]{7,15}$/, message: 'Invalid phone' },
           })}
         />
-        <Input label="Role" placeholder="e.g. Coordinator, Makeup Artist" {...register('role')} />
+        <Input
+          label="Role" placeholder="e.g. Coordinator, Makeup Artist"
+          {...register('role')}
+        />
         <Select label="Status" options={STATUS_OPTIONS} placeholder="Select status" {...register('status')} />
       </div>
       <Textarea label="Assigned Work" placeholder="Describe responsibilities..." {...register('assignedWork')} />
+
+      {/* Login credentials — only shown when adding a new employee */}
+      {!isEditing && (
+        <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/40 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <KeyRound size={14} className="text-indigo-500" />
+            <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Login Credentials</p>
+          </div>
+          <p className="text-xs text-indigo-600">The employee will use these to log in and view their tasks.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Email" type="email" placeholder="employee@example.com" required
+              error={errors.email?.message}
+              {...register('email', {
+                required: 'Email is required',
+                pattern: { value: /\S+@\S+\.\S+/, message: 'Invalid email' },
+              })}
+            />
+            <Input
+              label="Password" type="password" placeholder="Min. 6 characters" required
+              error={errors.password?.message}
+              {...register('password', {
+                required: 'Password is required',
+                minLength: { value: 6, message: 'Minimum 6 characters' },
+              })}
+            />
+          </div>
+        </div>
+      )}
+
+      {isEditing && (
+        <p className="text-xs text-gray-400 flex items-center gap-1">
+          <KeyRound size={12} />
+          Login email: <span className="font-medium text-gray-600">{defaultValues.email || '—'}</span>
+          &nbsp;· To change password, use Firebase Console.
+        </p>
+      )}
+
       <div className="flex gap-3 pt-2">
         <Button variant="secondary" className="flex-1" type="button" onClick={onCancel}>Cancel</Button>
         <Button className="flex-1" type="submit" loading={loading}>
-          {defaultValues?.id ? 'Update' : 'Add'} Employee
+          {isEditing ? 'Update' : 'Add'} Employee
         </Button>
       </div>
     </form>
@@ -58,7 +104,7 @@ export default function Employees() {
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const filtered = filterBySearch(employees, search, ['name', 'phone', 'role', 'assignedWork']);
+  const filtered = filterBySearch(employees, search, ['name', 'phone', 'role', 'assignedWork', 'email']);
 
   const openAdd = () => { setEditing(null); setModalOpen(true); };
   const openEdit = (e) => { setEditing(e); setModalOpen(true); };
@@ -67,17 +113,67 @@ export default function Employees() {
   const handleSubmit = async (data) => {
     setSubmitting(true);
     try {
-      const payload = { ...data, status: data.status || 'Active' };
-      editing ? await update(editing.id, payload) : await add(payload);
-      toast.success(editing ? 'Employee updated' : 'Employee added');
+      const payload = {
+        name: data.name,
+        phone: data.phone,
+        role: data.role || '',
+        assignedWork: data.assignedWork || '',
+        status: data.status || 'Active',
+        email: data.email || editing?.email || '',
+      };
+
+      if (editing) {
+        await update(editing.id, payload);
+        // Also update the users doc if it exists
+        if (editing.uid) {
+          await setDoc(doc(db, 'users', editing.uid), {
+            name: payload.name,
+            email: payload.email,
+            role: 'employee',
+            employeeId: editing.id,
+          }, { merge: true });
+        }
+        toast.success('Employee updated');
+      } else {
+        // Create Firebase Auth account first
+        const uid = await createEmployeeAccount(data.email, data.password);
+
+        // Save employee doc with uid
+        const employeeId = await add({ ...payload, uid });
+
+        // Save user role doc in users collection
+        await setDoc(doc(db, 'users', uid), {
+          name: data.name,
+          email: data.email,
+          role: 'employee',
+          employeeId,
+        });
+
+        toast.success('Employee added & account created');
+      }
       closeModal();
-    } catch { toast.error('Something went wrong'); }
-    finally { setSubmitting(false); }
+    } catch (e) {
+      const msg =
+        e.code === 'auth/email-already-in-use'
+          ? 'This email is already registered'
+          : e.code === 'auth/invalid-email'
+          ? 'Invalid email address'
+          : e.code === 'auth/weak-password'
+          ? 'Password is too weak'
+          : 'Something went wrong';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleDelete = async () => {
     setDeleting(true);
     try {
+      // Remove users doc if uid is stored
+      if (deleteTarget.uid) {
+        await deleteDoc(doc(db, 'users', deleteTarget.uid));
+      }
       await remove(deleteTarget.id);
       toast.success('Employee removed');
       setDeleteTarget(null);
@@ -111,7 +207,7 @@ export default function Employees() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['#', 'Name', 'Phone', 'Role', 'Assigned Work', 'Status', 'Actions'].map((h) => (
+                  {['#', 'Name', 'Phone', 'Email', 'Role', 'Status', 'Actions'].map((h) => (
                     <th key={h} className={`px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide ${h === 'Actions' ? 'text-right' : ''}`}>{h}</th>
                   ))}
                 </tr>
@@ -122,8 +218,8 @@ export default function Employees() {
                     <td className="px-5 py-3 text-gray-400 text-xs">{i + 1}</td>
                     <td className="px-5 py-3 font-medium text-gray-800">{emp.name}</td>
                     <td className="px-5 py-3 text-gray-600">{emp.phone}</td>
+                    <td className="px-5 py-3 text-gray-500 text-xs">{emp.email || '—'}</td>
                     <td className="px-5 py-3 text-gray-600">{emp.role || '—'}</td>
-                    <td className="px-5 py-3 text-gray-500 max-w-xs"><p className="truncate">{emp.assignedWork || '—'}</p></td>
                     <td className="px-5 py-3"><Badge>{emp.status || 'Active'}</Badge></td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-1">
@@ -143,7 +239,7 @@ export default function Employees() {
         <EmployeeForm defaultValues={editing} onSubmit={handleSubmit} onCancel={closeModal} loading={submitting} />
       </Modal>
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} loading={deleting}
-        title="Remove Employee" message={`Remove "${deleteTarget?.name}"? This cannot be undone.`} />
+        title="Remove Employee" message={`Remove "${deleteTarget?.name}"? Their login account will also be deactivated.`} />
     </div>
   );
 }

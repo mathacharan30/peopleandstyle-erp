@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -14,4 +14,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Secondary app — used to create employee accounts without signing out the admin
+let secondaryApp;
+try {
+  secondaryApp = getApp('Secondary');
+} catch {
+  secondaryApp = initializeApp(firebaseConfig, 'Secondary');
+}
+export const secondaryAuth = getAuth(secondaryApp);
+
 export default app;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { CalendarDays, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { loginWithEmail } from '../services/firebase/auth';
 import { useAuth } from '../contexts/AuthContext';
@@ -50,11 +50,13 @@ export default function Login() {
       <div className="w-full max-w-sm">
         {/* Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-600 mb-4">
-            <CalendarDays size={22} className="text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Rental ERP</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign in to your admin account</p>
+          <img
+            src="/favicon.jpeg"
+            alt="People and Style"
+            className="w-16 h-16 rounded-2xl object-cover mx-auto mb-4 shadow-sm"
+          />
+          <h1 className="text-2xl font-bold text-gray-900">People and Style</h1>
+          <p className="text-sm text-gray-500 mt-1">Sign in to your account</p>
         </div>
 
         {/* Card */}
