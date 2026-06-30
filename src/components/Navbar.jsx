@@ -4,9 +4,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { logout } from '../services/firebase/auth';
 import toast from 'react-hot-toast';
+import NotificationBell from './NotificationBell';
 
 export default function Navbar({ onMenuClick }) {
-  const { user, profile, role, isAdmin } = useAuth();
+  const { user, profile, role, isAdmin, isEmployee } = useAuth();
   const { dark, toggle } = useTheme();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -44,6 +45,9 @@ export default function Navbar({ onMenuClick }) {
         >
           {dark ? <Sun size={18} /> : <Moon size={18} />}
         </button>
+
+        {/* Notification bell — employees only */}
+        {isEmployee && <NotificationBell />}
 
       <div className="relative">
         <button

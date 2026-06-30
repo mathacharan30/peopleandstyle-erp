@@ -2,18 +2,19 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { onAuthChange, logout } from '../services/firebase/auth';
 import { db } from '../services/firebase/config';
+import { loginUser as oneSignalLogin, logoutUser as oneSignalLogout } from '../services/onesignal';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState(null);   // 'admin' | 'employee'
-  const [profile, setProfile] = useState(null); // Firestore user doc data
+  const [role, setRole] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onAuthChange(async (u) => {
-      setLoading(true); // hold spinner while we fetch role
+      setLoading(true);
       if (u) {
         try {
           const snap = await getDoc(doc(db, 'users', u.uid));
@@ -24,11 +25,16 @@ export function AuthProvider({ children }) {
               const empSnap = await getDoc(doc(db, 'employees', data.employeeId));
               if (empSnap.exists() && empSnap.data().status === 'Inactive') {
                 await logout();
-                return; // onAuthChange will fire again with null user
+                return;
               }
             }
             setRole(data.role || 'admin');
             setProfile(data);
+
+            // Register employee with OneSignal for push notifications
+            if (data.role === 'employee') {
+              oneSignalLogin(u.uid);
+            }
           } else {
             setRole('admin');
             setProfile(null);
@@ -40,6 +46,7 @@ export function AuthProvider({ children }) {
       } else {
         setRole(null);
         setProfile(null);
+        oneSignalLogout();
       }
       setUser(u);
       setLoading(false);

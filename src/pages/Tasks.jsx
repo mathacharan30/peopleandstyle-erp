@@ -3,7 +3,8 @@ import { useForm } from 'react-hook-form';
 import { Plus, Pencil, Trash2, CheckSquare, Clock, CircleDot, PauseCircle, ChevronDown, ChevronRight, Lightbulb } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useFirestore } from '../hooks/useFirestore';
-import { updateDocument } from '../services/firebase/firestore';
+import { updateDocument, addDocument } from '../services/firebase/firestore';
+import { sendPush } from '../services/onesignal';
 import { useAuth } from '../contexts/AuthContext';
 import { filterBySearch, formatDate } from '../utils/helpers';
 import Button from '../components/ui/Button';
@@ -134,12 +135,39 @@ export default function Tasks() {
   const openEdit = (t) => { setEditing(t); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setEditing(null); };
 
+  const sendTaskNotification = async (assignedName, taskTitle, priority) => {
+    const emp = employees.find((e) => e.name === assignedName);
+    if (!emp?.uid) return;
+    const message = `New task assigned to you: "${taskTitle}"`;
+    // In-app bell notification (Firestore)
+    await addDocument('notifications', {
+      recipientUid: emp.uid,
+      type: 'task_assigned',
+      message,
+      taskTitle,
+      priority: priority || 'Medium',
+      read: false,
+    });
+    // Phone/browser push notification (OneSignal)
+    sendPush(emp.uid, 'New Task Assigned', message);
+  };
+
   const handleSubmit = async (data) => {
     setSubmitting(true);
     try {
       const payload = { ...data, status: data.status || 'To Do', priority: data.priority || 'Medium' };
-      editing ? await update(editing.id, payload) : await add(payload);
-      toast.success(editing ? 'Task updated' : 'Task created');
+      if (editing) {
+        await update(editing.id, payload);
+        // Notify if reassigned to a different employee
+        if (data.assignedTo !== editing.assignedTo) {
+          await sendTaskNotification(data.assignedTo, data.title, data.priority);
+        }
+        toast.success('Task updated');
+      } else {
+        await add(payload);
+        await sendTaskNotification(data.assignedTo, data.title, data.priority);
+        toast.success('Task created');
+      }
       closeModal();
     } catch { toast.error('Something went wrong'); }
     finally { setSubmitting(false); }
