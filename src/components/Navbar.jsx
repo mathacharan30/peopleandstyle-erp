@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Menu, LogOut, ChevronDown, ShieldCheck, UserCircle2 } from 'lucide-react';
+import { Menu, LogOut, ChevronDown, ShieldCheck, UserCircle2, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { logout } from '../services/firebase/auth';
 import toast from 'react-hot-toast';
 
 export default function Navbar({ onMenuClick }) {
   const { user, profile, role, isAdmin } = useAuth();
+  const { dark, toggle } = useTheme();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -23,7 +25,7 @@ export default function Navbar({ onMenuClick }) {
     : isAdmin ? 'Admin' : '';
 
   return (
-    <header className="fixed top-0 left-0 right-0 lg:left-64 z-10 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 sm:px-6">
+    <header className="fixed top-0 left-0 right-0 lg:left-64 z-10 h-16 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between px-4 sm:px-6">
       <button
         onClick={onMenuClick}
         className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
@@ -32,6 +34,16 @@ export default function Navbar({ onMenuClick }) {
       </button>
 
       <div className="hidden lg:block" />
+
+      <div className="flex items-center gap-2">
+        {/* Dark mode toggle */}
+        <button
+          onClick={toggle}
+          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+          title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {dark ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
 
       <div className="relative">
         <button
@@ -60,7 +72,7 @@ export default function Navbar({ onMenuClick }) {
         {dropdownOpen && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} />
-            <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-100 rounded-xl shadow-lg py-1 z-20">
+            <div className="absolute right-0 mt-1 w-56 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg py-1 z-20">
               {/* Profile info */}
               <div className="px-4 py-3 border-b border-gray-100">
                 <div className="flex items-center gap-3">
@@ -97,6 +109,7 @@ export default function Navbar({ onMenuClick }) {
             </div>
           </>
         )}
+      </div>
       </div>
     </header>
   );
