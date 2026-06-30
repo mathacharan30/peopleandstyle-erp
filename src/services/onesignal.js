@@ -1,35 +1,27 @@
-import OneSignal from 'react-onesignal';
-
 const APP_ID = '758e1141-e34e-44c4-a1bf-a9fc837c890e';
 
-let initialized = false;
-
-async function init() {
-  if (initialized) return;
-  initialized = true;
-  await OneSignal.init({
-    appId: APP_ID,
-    serviceWorkerPath: '/OneSignalSDKWorker.js',
-    notifyButton: { enable: false },
-    promptOptions: { slidedown: { prompts: [{ type: 'push', autoPrompt: false }] } },
-  });
+function getOS() {
+  return window.OneSignal;
 }
 
 export async function loginUser(uid) {
   try {
-    await init();
-    await OneSignal.login(uid);
-    await OneSignal.Notifications.requestPermission();
-  } catch {
-    // Non-fatal — push is an enhancement only
+    const os = getOS();
+    if (!os) return;
+    await os.login(uid);
+    await os.Notifications.requestPermission();
+  } catch (err) {
+    console.warn('OneSignal loginUser failed:', err?.message);
   }
 }
 
 export async function logoutUser() {
   try {
-    await OneSignal.logout();
+    const os = getOS();
+    if (!os) return;
+    await os.logout();
   } catch {
-    // Non-fatal
+    // non-fatal
   }
 }
 
