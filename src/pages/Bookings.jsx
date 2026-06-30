@@ -369,6 +369,15 @@ export default function Bookings() {
     }
   };
 
+  const handleStatusChange = async (booking, newStatus) => {
+    try {
+      await update(booking.id, { ...booking, bookingStatus: newStatus });
+      toast.success(`Status updated to ${newStatus}`);
+    } catch {
+      toast.error('Failed to update status');
+    }
+  };
+
   const handleDelete = async () => {
     setDeleting(true);
     try {
@@ -506,7 +515,19 @@ export default function Bookings() {
                           </span>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap"><Badge>{b.paymentStatus || 'Pending'}</Badge></td>
-                        <td className="px-4 py-3 whitespace-nowrap"><Badge>{b.bookingStatus || 'Pending'}</Badge></td>
+                        <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <select
+                            value={b.bookingStatus || 'Pending'}
+                            onChange={(e) => handleStatusChange(b, e.target.value)}
+                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500
+                              ${(b.bookingStatus || 'Pending') === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                                b.bookingStatus === 'Delivered' ? 'bg-blue-100 text-blue-800' :
+                                b.bookingStatus === 'Returned' ? 'bg-purple-100 text-purple-800' :
+                                'bg-green-100 text-green-800'}`}
+                          >
+                            {BOOKING_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1">
                             <button
