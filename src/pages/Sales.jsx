@@ -75,6 +75,7 @@ function SaleForm({ defaultValues, customers, onSubmit, onCancel, loading }) {
 export default function Sales() {
   const { data, loading, add, update, remove } = useFirestore('sales');
   const { data: customers } = useFirestore('customers');
+  const { data: incomeData, add: addIncome, update: updateIncome, remove: removeIncome } = useFirestore('income');
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -89,6 +90,15 @@ export default function Sales() {
   const openEdit = (r) => { setEditing(r); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setEditing(null); };
 
+  const buildIncomePayload = (payload, saleRef) => ({
+    source: 'Sale',
+    amount: payload.totalAmount,
+    date: payload.date,
+    paymentMethod: payload.paymentMethod || '',
+    reference: saleRef,
+    description: `Sale: ${payload.itemName}${payload.customerName ? ' — ' + payload.customerName : ''}`,
+  });
+
   const handleSubmit = async (formData) => {
     setSubmitting(true);
     try {
@@ -98,7 +108,16 @@ export default function Sales() {
         unitPrice: Number(formData.unitPrice) || 0,
         totalAmount: Number(formData.totalAmount) || 0,
       };
-      editing ? await update(editing.id, payload) : await add(payload);
+
+      if (editing) {
+        await update(editing.id, payload);
+        const linked = incomeData.find((r) => r.reference === editing.id);
+        if (linked) await updateIncome(linked.id, buildIncomePayload(payload, editing.id));
+      } else {
+        const saleId = await add(payload);
+        await addIncome(buildIncomePayload(payload, saleId));
+      }
+
       toast.success(editing ? 'Sale updated' : 'Sale recorded');
       closeModal();
     } catch {
@@ -111,7 +130,9 @@ export default function Sales() {
   const handleDelete = async () => {
     setDeleting(true);
     try {
+      const linked = incomeData.find((r) => r.reference === deleteTarget.id);
       await remove(deleteTarget.id);
+      if (linked) await removeIncome(linked.id);
       toast.success('Sale deleted');
       setDeleteTarget(null);
     } catch {

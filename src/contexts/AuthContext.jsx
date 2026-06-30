@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { onAuthChange } from '../services/firebase/auth';
+import { onAuthChange, logout } from '../services/firebase/auth';
 import { db } from '../services/firebase/config';
 
 const AuthContext = createContext(null);
@@ -19,6 +19,14 @@ export function AuthProvider({ children }) {
           const snap = await getDoc(doc(db, 'users', u.uid));
           if (snap.exists()) {
             const data = snap.data();
+            // Sign out deactivated employees immediately
+            if (data.role === 'employee' && data.employeeId) {
+              const empSnap = await getDoc(doc(db, 'employees', data.employeeId));
+              if (empSnap.exists() && empSnap.data().status === 'Inactive') {
+                await logout();
+                return; // onAuthChange will fire again with null user
+              }
+            }
             setRole(data.role || 'admin');
             setProfile(data);
           } else {

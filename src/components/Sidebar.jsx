@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Link2,
   ShoppingBag,
+  Lightbulb,
   X,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,6 +23,7 @@ const adminNavItems = [
   { to: '/collaborations', icon: Link2, label: 'Collaborations' },
   { to: '/employees', icon: UserCheck, label: 'Employees' },
   { to: '/tasks', icon: ClipboardList, label: 'Tasks' },
+  { to: '/ideas', icon: Lightbulb, label: 'Content Ideas' },
   { to: '/content', icon: FileText, label: 'Content Planner' },
 ];
 

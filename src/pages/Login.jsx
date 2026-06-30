@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
-import { loginWithEmail } from '../services/firebase/auth';
+import { loginWithEmail, logout } from '../services/firebase/auth';
+import { db } from '../services/firebase/config';
 import { useAuth } from '../contexts/AuthContext';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -24,7 +26,20 @@ export default function Login() {
 
   const onSubmit = async ({ email, password }) => {
     try {
-      await loginWithEmail(email, password);
+      const cred = await loginWithEmail(email, password);
+      // Block inactive employees before letting them in
+      const userSnap = await getDoc(doc(db, 'users', cred.user.uid));
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        if (userData.role === 'employee' && userData.employeeId) {
+          const empSnap = await getDoc(doc(db, 'employees', userData.employeeId));
+          if (empSnap.exists() && empSnap.data().status === 'Inactive') {
+            await logout();
+            toast.error('Your account has been deactivated. Contact your admin.');
+            return;
+          }
+        }
+      }
       toast.success('Welcome back!');
       navigate('/');
     } catch (e) {

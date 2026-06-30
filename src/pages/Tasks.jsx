@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
-import { Plus, Pencil, Trash2, CheckSquare, Clock, CircleDot, PauseCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, CheckSquare, Clock, CircleDot, PauseCircle, ChevronDown, ChevronRight, Lightbulb } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useFirestore } from '../hooks/useFirestore';
+import { updateDocument } from '../services/firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { filterBySearch, formatDate } from '../utils/helpers';
 import Button from '../components/ui/Button';
@@ -18,7 +19,6 @@ import EmptyState from '../components/ui/EmptyState';
 
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 const STATUSES = ['To Do', 'In Progress', 'Completed', 'On Hold'];
-const CATEGORIES = ['Delivery', 'Pickup', 'Makeup', 'Jewellery', 'Admin', 'Marketing', 'Other'];
 
 const priorityColor = { Low: 'gray', Medium: 'blue', High: 'yellow', Urgent: 'red' };
 
@@ -70,7 +70,6 @@ function TaskForm({ defaultValues, employees, onSubmit, onCancel, loading }) {
           error={errors.assignedTo?.message}
           {...register('assignedTo', { required: 'Please assign to an employee' })}
         />
-        <Select label="Category" options={CATEGORIES} placeholder="Select category" {...register('category')} />
         <Select
           label="Priority" required
           options={PRIORITIES} placeholder="Select priority"
@@ -83,7 +82,7 @@ function TaskForm({ defaultValues, employees, onSubmit, onCancel, loading }) {
         </div>
       </div>
       <Textarea label="Description" placeholder="Task details, instructions..." rows={3} {...register('description')} />
-      <Textarea label="Remarks" placeholder="Additional notes..." rows={2} {...register('remarks')} />
+
       <div className="flex gap-3 pt-2">
         <Button variant="secondary" className="flex-1" type="button" onClick={onCancel}>Cancel</Button>
         <Button className="flex-1" type="submit" loading={loading}>
@@ -98,10 +97,12 @@ export default function Tasks() {
   const { isAdmin, isEmployee, profile } = useAuth();
   const { data: tasks, loading, add, update, remove } = useFirestore('tasks');
   const { data: employees } = useFirestore('employees');
+  const { data: ideas } = useFirestore('contentIdeas');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -124,7 +125,7 @@ export default function Tasks() {
     onHold: visibleTasks.filter((t) => t.status === 'On Hold').length,
   }), [visibleTasks]);
 
-  let filtered = filterBySearch(visibleTasks, search, ['title', 'assignedTo', 'category', 'description']);
+  let filtered = filterBySearch(visibleTasks, search, ['title', 'assignedTo', 'description']);
   if (statusFilter) filtered = filtered.filter((t) => (t.status || 'To Do') === statusFilter);
   if (isAdmin && priorityFilter) filtered = filtered.filter((t) => t.priority === priorityFilter);
   if (isAdmin && assigneeFilter) filtered = filtered.filter((t) => t.assignedTo === assigneeFilter);
@@ -157,7 +158,13 @@ export default function Tasks() {
   const quickStatus = async (task, newStatus) => {
     try {
       await update(task.id, { ...task, status: newStatus });
-      toast.success(`Marked as ${newStatus}`);
+      if (newStatus === 'Completed' && task.ideaId && task.taskType) {
+        const nextStage = task.taskType === 'production' ? 'Editing' : 'Editing Completed';
+        await updateDocument('contentIdeas', task.ideaId, { status: nextStage });
+        toast.success(`Marked as ${newStatus} — idea moved to ${nextStage}`);
+      } else {
+        toast.success(`Marked as ${newStatus}`);
+      }
     } catch { toast.error('Update failed'); }
   };
 
@@ -233,17 +240,37 @@ export default function Tasks() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['Task', ...(isAdmin ? ['Assigned To'] : []), 'Category', 'Priority', 'Due Date', 'Status', ...(isAdmin ? ['Actions'] : [])].map((h) => (
-                    <th key={h} className={`px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap ${h === 'Actions' ? 'text-right' : ''}`}>{h}</th>
+                  {['', 'Task', ...(isAdmin ? ['Assigned To'] : []), 'Priority', 'Due Date', 'Status', ...(isAdmin ? ['Actions'] : [])].map((h, idx) => (
+                    <th key={idx} className={`px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap ${h === 'Actions' ? 'text-right' : ''} ${h === '' ? 'w-8' : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map((task) => (
+                {filtered.map((task) => {
+                  const linkedIdea = task.ideaId ? ideas.find((i) => i.id === task.ideaId) : null;
+                  const isExpanded = expandedTaskId === task.id;
+                  const colSpan = 2 + (isAdmin ? 1 : 0) + 4 + (isAdmin ? 1 : 0);
+                  return (
+                  <>
                   <tr key={task.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-3 py-3 w-8">
+                      {linkedIdea && (
+                        <button
+                          onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}
+                          className="p-1 rounded text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                        >
+                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-5 py-3 max-w-xs">
                       <p className="font-medium text-gray-800">{task.title}</p>
                       {task.description && <p className="text-xs text-gray-400 truncate mt-0.5">{task.description}</p>}
+                      {linkedIdea && (
+                        <span className="inline-flex items-center gap-1 mt-1 text-xs text-indigo-500">
+                          <Lightbulb size={10} /> Content Idea
+                        </span>
+                      )}
                     </td>
                     {isAdmin && (
                       <td className="px-5 py-3 whitespace-nowrap">
@@ -257,7 +284,7 @@ export default function Tasks() {
                         </div>
                       </td>
                     )}
-                    <td className="px-5 py-3 text-gray-500 whitespace-nowrap">{task.category || '—'}</td>
+
                     <td className="px-5 py-3 whitespace-nowrap">
                       <Badge color={priorityColor[task.priority] || 'gray'}>{task.priority || 'Medium'}</Badge>
                     </td>
@@ -290,7 +317,48 @@ export default function Tasks() {
                       </td>
                     )}
                   </tr>
-                ))}
+                  {isExpanded && linkedIdea && (
+                    <tr key={`${task.id}-idea`} className="bg-indigo-50/40">
+                      <td />
+                      <td colSpan={colSpan} className="px-5 py-4">
+                        <div className="flex items-start gap-2 mb-2">
+                          <Lightbulb size={14} className="text-indigo-500 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Content Idea Details</p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">Title</p>
+                            <p className="font-medium text-gray-800">{linkedIdea.title}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">Stage</p>
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                              {linkedIdea.status || 'Pending'}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">Task Type</p>
+                            <p className="text-gray-700 capitalize">{task.taskType || '—'}</p>
+                          </div>
+                          {linkedIdea.description && (
+                            <div className="sm:col-span-2">
+                              <p className="text-xs text-gray-400 mb-0.5">Description</p>
+                              <p className="text-gray-600 text-sm">{linkedIdea.description}</p>
+                            </div>
+                          )}
+                          {linkedIdea.notes && (
+                            <div className="sm:col-span-1">
+                              <p className="text-xs text-gray-400 mb-0.5">Discussion Notes</p>
+                              <p className="text-gray-600 text-sm">{linkedIdea.notes}</p>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </>
+                  );
+                })}
               </tbody>
             </table>
           </div>

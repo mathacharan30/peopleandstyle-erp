@@ -6,7 +6,9 @@
       "mcp__claude_ai_Vercel__deploy_to_vercel",
       "PowerShell(npm install -g vercel 2>&1)",
       "mcp__claude_ai_Vercel__list_deployments",
-      "mcp__claude_ai_Vercel__get_deployment_build_logs"
+      "mcp__claude_ai_Vercel__get_deployment_build_logs",
+      "Skill(artifact-design)",
+      "Skill(artifact-design:*)"
     ]
   }
 }

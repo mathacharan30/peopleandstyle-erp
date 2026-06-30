@@ -106,6 +106,17 @@ export default function Employees() {
 
   const filtered = filterBySearch(employees, search, ['name', 'phone', 'role', 'assignedWork', 'email']);
 
+  const quickToggleStatus = async (emp) => {
+    const newStatus = (emp.status || 'Active') === 'Active' ? 'Inactive' : 'Active';
+    try {
+      await update(emp.id, { ...emp, status: newStatus });
+      if (emp.uid) {
+        await setDoc(doc(db, 'users', emp.uid), { status: newStatus }, { merge: true });
+      }
+      toast.success(`${emp.name} set to ${newStatus}`);
+    } catch { toast.error('Update failed'); }
+  };
+
   const openAdd = () => { setEditing(null); setModalOpen(true); };
   const openEdit = (e) => { setEditing(e); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setEditing(null); };
@@ -220,7 +231,17 @@ export default function Employees() {
                     <td className="px-5 py-3 text-gray-600">{emp.phone}</td>
                     <td className="px-5 py-3 text-gray-500 text-xs">{emp.email || '—'}</td>
                     <td className="px-5 py-3 text-gray-600">{emp.role || '—'}</td>
-                    <td className="px-5 py-3"><Badge>{emp.status || 'Active'}</Badge></td>
+                    <td className="px-5 py-3">
+                      <button
+                        onClick={() => quickToggleStatus(emp)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer
+                          ${(emp.status || 'Active') === 'Active'
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                      >
+                        {emp.status || 'Active'}
+                      </button>
+                    </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => openEdit(emp)} className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"><Pencil size={15} /></button>
