@@ -1,28 +1,31 @@
 const APP_ID = '758e1141-e34e-44c4-a1bf-a9fc837c890e';
 
-function getOS() {
-  return window.OneSignal;
+// Queues a callback to run after OneSignal SDK is fully initialized.
+// If SDK is already ready, it runs immediately.
+function deferred(callback) {
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  window.OneSignalDeferred.push(callback);
 }
 
-export async function loginUser(uid) {
-  try {
-    const os = getOS();
-    if (!os) return;
-    await os.login(uid);
-    await os.Notifications.requestPermission();
-  } catch (err) {
-    console.warn('OneSignal loginUser failed:', err?.message);
-  }
+export function loginUser(uid) {
+  deferred(async (OneSignal) => {
+    try {
+      await OneSignal.login(uid);
+      await OneSignal.Notifications.requestPermission();
+    } catch (err) {
+      console.warn('OneSignal login failed:', err?.message);
+    }
+  });
 }
 
-export async function logoutUser() {
-  try {
-    const os = getOS();
-    if (!os) return;
-    await os.logout();
-  } catch {
-    // non-fatal
-  }
+export function logoutUser() {
+  deferred(async (OneSignal) => {
+    try {
+      await OneSignal.logout();
+    } catch {
+      // non-fatal
+    }
+  });
 }
 
 export async function sendPush(recipientUid, title, body) {
