@@ -8,7 +8,14 @@
       "mcp__claude_ai_Vercel__list_deployments",
       "mcp__claude_ai_Vercel__get_deployment_build_logs",
       "Skill(artifact-design)",
-      "Skill(artifact-design:*)"
+      "Skill(artifact-design:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\MATHAP~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--PeopleAndStyle-erp\\\\92393d99-521a-4fa0-b559-afd739de53f7\\\\scratchpad\\\\erp-docs.html\" -Destination \"C:\\\\Users\\\\Matha Prasad P S\\\\Downloads\\\\PeopleAndStyle-ERP-Guide.html\" -Force)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Matha Prasad P S\\Downloads"
     ]
   }
 }
