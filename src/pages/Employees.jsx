@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Plus, Pencil, Trash2, KeyRound } from 'lucide-react';
+import { Plus, Pencil, Trash2, KeyRound, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase/config';
@@ -78,11 +78,18 @@ function EmployeeForm({ defaultValues, onSubmit, onCancel, loading }) {
       )}
 
       {isEditing && (
-        <p className="text-xs text-gray-400 flex items-center gap-1">
-          <KeyRound size={12} />
-          Login email: <span className="font-medium text-gray-600">{defaultValues.email || '—'}</span>
-          &nbsp;· To change password, use Firebase Console.
-        </p>
+        <div className="border border-gray-200 rounded-xl p-4 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <KeyRound size={14} className="text-gray-400" />
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Login Credentials</p>
+          </div>
+          <p className="text-xs text-gray-500">
+            Email: <span className="font-medium text-gray-700">{defaultValues.email || '—'}</span>
+          </p>
+          <p className="text-xs text-gray-500">
+            Password: <span className="font-mono font-medium text-gray-700">{defaultValues.password || '(not stored)'}</span>
+          </p>
+        </div>
       )}
 
       <div className="flex gap-3 pt-2">
@@ -103,6 +110,7 @@ export default function Employees() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showPasswordId, setShowPasswordId] = useState(null);
 
   const filtered = filterBySearch(employees, search, ['name', 'phone', 'role', 'assignedWork', 'email']);
 
@@ -134,6 +142,8 @@ export default function Employees() {
       };
 
       if (editing) {
+        // Keep existing password in Firestore unless a new one is provided
+        if (data.newPassword) payload.password = data.newPassword;
         await update(editing.id, payload);
         // Also update the users doc if it exists
         if (editing.uid) {
@@ -149,8 +159,8 @@ export default function Employees() {
         // Create Firebase Auth account first
         const uid = await createEmployeeAccount(data.email, data.password);
 
-        // Save employee doc with uid
-        const employeeId = await add({ ...payload, uid });
+        // Save employee doc with uid — store password so admin can view it
+        const employeeId = await add({ ...payload, uid, password: data.password });
 
         // Save user role doc in users collection
         await setDoc(doc(db, 'users', uid), {
@@ -218,7 +228,7 @@ export default function Employees() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['#', 'Name', 'Phone', 'Email', 'Role', 'Status', 'Actions'].map((h) => (
+                  {['#', 'Name', 'Phone', 'Email', 'Role', 'Password', 'Status', 'Actions'].map((h) => (
                     <th key={h} className={`px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide ${h === 'Actions' ? 'text-right' : ''}`}>{h}</th>
                   ))}
                 </tr>
@@ -231,6 +241,23 @@ export default function Employees() {
                     <td className="px-5 py-3 text-gray-600">{emp.phone}</td>
                     <td className="px-5 py-3 text-gray-500 text-xs">{emp.email || '—'}</td>
                     <td className="px-5 py-3 text-gray-600">{emp.role || '—'}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs text-gray-700">
+                          {showPasswordId === emp.id
+                            ? (emp.password || '—')
+                            : emp.password ? '••••••••' : '—'}
+                        </span>
+                        {emp.password && (
+                          <button
+                            onClick={() => setShowPasswordId(showPasswordId === emp.id ? null : emp.id)}
+                            className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors"
+                          >
+                            {showPasswordId === emp.id ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-5 py-3">
                       <button
                         onClick={() => quickToggleStatus(emp)}
