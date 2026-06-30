@@ -483,16 +483,13 @@ export default function Bookings() {
                   return (
                     <Fragment key={b.id}>
                       <tr
-                        className={`hover:bg-gray-50/50 transition-colors ${isExpanded ? 'bg-gray-50/40' : ''} border-b border-gray-50`}
+                        onClick={() => toggleExpand(b.id)}
+                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isExpanded ? 'bg-gray-50/40' : ''} border-b border-gray-50`}
                       >
                         <td className="px-3 py-3">
-                          <button
-                            onClick={() => toggleExpand(b.id)}
-                            className="p-0.5 rounded text-gray-400 hover:text-indigo-600 transition-colors"
-                            title={isExpanded ? 'Collapse' : 'Show finances'}
-                          >
+                          <span className="p-0.5 rounded text-gray-400 inline-flex">
                             {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                          </button>
+                          </span>
                         </td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{b.bookingId}</td>
                         <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{b.customerName}</td>
@@ -513,13 +510,13 @@ export default function Bookings() {
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => openEdit(b)}
+                              onClick={(e) => { e.stopPropagation(); openEdit(b); }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                             >
                               <Pencil size={15} />
                             </button>
                             <button
-                              onClick={() => setDeleteTarget(b)}
+                              onClick={(e) => { e.stopPropagation(); setDeleteTarget(b); }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                             >
                               <Trash2 size={15} />
