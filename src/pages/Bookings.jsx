@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react';
 import { useForm } from 'react-hook-form';
-import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingUp, TrendingDown, RotateCcw } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useFirestore } from '../hooks/useFirestore';
 import { filterBySearch, formatDate, formatCurrency, generateBookingId } from '../utils/helpers';
@@ -186,7 +186,7 @@ function QuickExpenseForm({ booking, prefill, onSubmit, onCancel, loading }) {
   );
 }
 
-function BookingExpandedRow({ booking, incomeData, expenseData, colSpan, onAddIncome, onAddExpense, onAddRefund }) {
+function BookingExpandedRow({ booking, incomeData, expenseData, colSpan, onAddIncome, onAddExpense }) {
   const linkedIncome = incomeData.filter((i) => i.reference === booking.bookingId);
   const linkedExpenses = expenseData.filter((e) => e.reference === booking.bookingId);
 
@@ -225,12 +225,6 @@ function BookingExpandedRow({ booking, incomeData, expenseData, colSpan, onAddIn
               className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 font-medium transition-colors flex items-center gap-1"
             >
               <TrendingDown size={12} /> Expense
-            </button>
-            <button
-              onClick={onAddRefund}
-              className="text-xs px-3 py-1.5 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-200 font-medium transition-colors flex items-center gap-1"
-            >
-              <RotateCcw size={12} /> Deposit Refund
             </button>
           </div>
         </div>
@@ -423,15 +417,6 @@ export default function Bookings() {
     setExpensePrefill(prefill);
   };
 
-  const openRefund = (booking) => {
-    openExpense(booking, {
-      category: 'Deposit Refund',
-      amount: booking.deposit || '',
-      paidTo: booking.customerName,
-      description: `Deposit refund — ${booking.customerName}`,
-    });
-  };
-
   const TABLE_COLS = 10;
 
   return (
@@ -553,7 +538,6 @@ export default function Bookings() {
                           colSpan={TABLE_COLS + 1}
                           onAddIncome={() => setIncomeModalBooking(b)}
                           onAddExpense={() => openExpense(b)}
-                          onAddRefund={() => openRefund(b)}
                         />
                       )}
                     </Fragment>
