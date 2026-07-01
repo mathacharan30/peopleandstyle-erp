@@ -15,7 +15,7 @@ import Badge from '../components/ui/Badge';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 
-const SERVICE_TYPES = ['Rental', 'Makeup', 'Jewellery'];
+const SERVICE_TYPES = ['Rental Clothes', 'Rental Jewellery', 'Photography', 'Makeup'];
 const PAYMENT_STATUSES = ['Pending', 'Paid'];
 const BOOKING_STATUSES = ['Pending', 'Delivered', 'Returned'];
 const DAMAGE_OPTIONS = ['No', 'Yes'];
@@ -66,8 +66,8 @@ function BookingForm({ defaultValues, customers, onSubmit, onCancel, loading }) 
       </Section>
 
       <Section title="Pricing">
-        <Input label="Rent Price (₹)" type="number" placeholder="0" required error={errors.rentPrice?.message}
-          {...register('rentPrice', { required: 'Rent price is required', min: { value: 0, message: 'Must be positive' } })} />
+        <Input label="Rent Price (₹)" type="number" placeholder="0"
+          {...register('rentPrice', { min: { value: 0, message: 'Must be positive' } })} />
         <Input label="Refundable Deposit (₹)" type="number" placeholder="0"
           {...register('deposit', { min: { value: 0, message: 'Must be positive' } })} />
         <Input label="Total Amount (₹)" type="number" placeholder="0"
