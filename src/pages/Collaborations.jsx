@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Phone, User } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, ChevronDown, ChevronRight, Phone, User, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useFirestore } from '../hooks/useFirestore';
 import { filterBySearch } from '../utils/helpers';
@@ -297,12 +297,32 @@ export default function Collaborations() {
                                         {ct.name?.charAt(0)?.toUpperCase() || '?'}
                                       </span>
                                     </div>
-                                    <div className="min-w-0">
+                                    <div className="min-w-0 flex-1">
                                       <p className="text-sm font-medium text-gray-800 truncate">{ct.name || '—'}</p>
-                                      <p className="text-xs text-gray-500 flex items-center gap-1">
-                                        <Phone size={10} /> {ct.phone || '—'}
-                                      </p>
+                                      <p className="text-xs text-gray-500">{ct.phone || '—'}</p>
                                     </div>
+                                    {ct.phone && (
+                                      <div className="flex items-center gap-1 flex-shrink-0">
+                                        <a
+                                          href={`tel:${ct.phone}`}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                          title="Call"
+                                        >
+                                          <Phone size={13} />
+                                        </a>
+                                        <a
+                                          href={`https://wa.me/${ct.phone.replace(/\D/g, '')}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                                          title="WhatsApp"
+                                        >
+                                          <MessageCircle size={13} />
+                                        </a>
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                               </div>
