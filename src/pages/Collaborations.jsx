@@ -306,20 +306,20 @@ export default function Collaborations() {
                                         <a
                                           href={`tel:${ct.phone}`}
                                           onClick={(e) => e.stopPropagation()}
-                                          className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-xs font-medium"
                                           title="Call"
                                         >
-                                          <Phone size={13} />
+                                          <Phone size={14} /> Call
                                         </a>
                                         <a
                                           href={`https://wa.me/${ct.phone.replace(/\D/g, '')}`}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           onClick={(e) => e.stopPropagation()}
-                                          className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors text-xs font-medium"
                                           title="WhatsApp"
                                         >
-                                          <MessageCircle size={13} />
+                                          <MessageCircle size={14} /> WhatsApp
                                         </a>
                                       </div>
                                     )}
