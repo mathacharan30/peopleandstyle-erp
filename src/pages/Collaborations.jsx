@@ -289,37 +289,39 @@ export default function Collaborations() {
                             {contacts.length === 0 ? (
                               <p className="text-xs text-gray-400 italic">No contacts added yet</p>
                             ) : (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                                 {contacts.map((ct, idx) => (
-                                  <div key={idx} className="flex items-center gap-3 bg-white rounded-lg border border-gray-100 px-3 py-2.5">
-                                    <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                                      <span className="text-xs font-semibold text-indigo-600">
-                                        {ct.name?.charAt(0)?.toUpperCase() || '?'}
-                                      </span>
+                                  <div key={idx} className="bg-white rounded-lg border border-gray-100 p-3 flex flex-col gap-2">
+                                    {/* Name + phone */}
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                                        <span className="text-xs font-semibold text-indigo-600">
+                                          {ct.name?.charAt(0)?.toUpperCase() || '?'}
+                                        </span>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-medium text-gray-800 truncate">{ct.name || '—'}</p>
+                                        <p className="text-xs text-gray-500 truncate">{ct.phone || '—'}</p>
+                                      </div>
                                     </div>
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-sm font-medium text-gray-800 truncate">{ct.name || '—'}</p>
-                                      <p className="text-xs text-gray-500">{ct.phone || '—'}</p>
-                                    </div>
+                                    {/* Buttons full-width below */}
                                     {ct.phone && (
-                                      <div className="flex items-center gap-1 flex-shrink-0">
+                                      <div className="flex gap-1.5">
                                         <a
                                           href={`tel:${ct.phone}`}
                                           onClick={(e) => e.stopPropagation()}
-                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-xs font-medium"
-                                          title="Call"
+                                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-xs font-medium"
                                         >
-                                          <Phone size={14} /> Call
+                                          <Phone size={12} /> Call
                                         </a>
                                         <a
                                           href={`https://wa.me/${ct.phone.replace(/\D/g, '')}`}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           onClick={(e) => e.stopPropagation()}
-                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors text-xs font-medium"
-                                          title="WhatsApp"
+                                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors text-xs font-medium"
                                         >
-                                          <MessageCircle size={14} /> WhatsApp
+                                          <MessageCircle size={12} /> WhatsApp
                                         </a>
                                       </div>
                                     )}
