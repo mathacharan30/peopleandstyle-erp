@@ -289,7 +289,7 @@ export default function Collaborations() {
                             {contacts.length === 0 ? (
                               <p className="text-xs text-gray-400 italic">No contacts added yet</p>
                             ) : (
-                              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                                 {contacts.map((ct, idx) => (
                                   <div key={idx} className="bg-white rounded-lg border border-gray-100 p-3 flex flex-col gap-2">
                                     {/* Name + phone */}
