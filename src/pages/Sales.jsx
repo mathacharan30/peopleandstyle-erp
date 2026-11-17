@@ -46,6 +46,7 @@ function initialFormState(sale) {
   const inv = sale?.invoice;
   if (inv) {
     return {
+      customerId: sale.customerId || '',
       customerName: inv.customerName || '',
       customerPhone: inv.customerPhone || '',
       customerEmail: inv.customerEmail || '',
@@ -59,6 +60,7 @@ function initialFormState(sale) {
     };
   }
   return {
+    customerId: sale?.customerId || '',
     customerName: sale?.customerName || '',
     customerPhone: sale?.customerPhone || '',
     customerEmail: '',
@@ -109,6 +111,85 @@ function Section({ title, children, right }) {
   );
 }
 
+const customerLabel = (c) => (c.phone ? `${c.name} · ${c.phone}` : c.name);
+
+// Search existing customers by name or phone. Leaving it empty means a new customer.
+function CustomerPicker({ customers, selectedId, onSelect }) {
+  const selected = customers.find((c) => c.id === selectedId);
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const qDigits = q.replace(/\D/g, '');
+    return [...customers]
+      .filter((c) => !q
+        || (c.name || '').toLowerCase().includes(q)
+        || (qDigits && String(c.phone || '').replace(/\D/g, '').includes(qDigits)))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .slice(0, 8);
+  }, [customers, query]);
+
+  const choose = (c) => {
+    onSelect(c.id);
+    setQuery('');
+    setOpen(false);
+    setSearching(false);
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive((i) => Math.min(i + 1, matches.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (open && matches[active]) choose(matches[active]); }
+    else if (e.key === 'Escape') { setOpen(false); if (selected) setSearching(false); }
+  };
+
+  if (selected && !searching) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Existing customer</span>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-sm">
+          <span className="flex-1 text-indigo-800 truncate">
+            Selected: <span className="font-medium">{customerLabel(selected)}</span>
+          </span>
+          <button type="button" onClick={() => { setSearching(true); setOpen(true); setActive(0); }}
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Change</button>
+          <button type="button" title="Use a new customer instead" onClick={() => onSelect('')}
+            className="p-1 rounded text-indigo-400 hover:text-red-600 hover:bg-red-50"><X size={14} /></button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <Input label="Existing customer" placeholder="Search by name or phone — leave empty for a new customer"
+        value={query} autoFocus={searching} autoComplete="off"
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); setActive(0); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => { setOpen(false); if (selected) setSearching(false); }}
+        onKeyDown={onKeyDown} />
+      {open && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          {matches.length === 0 ? (
+            <p className="px-3 py-2.5 text-xs text-gray-400">No match — fill the details below to add a new customer</p>
+          ) : matches.map((c, i) => (
+            <button key={c.id} type="button"
+              onMouseDown={(e) => { e.preventDefault(); choose(c); }}
+              onMouseEnter={() => setActive(i)}
+              className={`w-full text-left px-3 py-2 text-sm flex justify-between gap-3 ${i === active ? 'bg-indigo-50' : ''}`}>
+              <span className="font-medium text-gray-800 truncate">{c.name}</span>
+              <span className="text-gray-400 whitespace-nowrap">{c.phone}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SaleBillForm({ sale, customers, onSubmit, onCancel, loading }) {
   const [f, setF] = useState(() => initialFormState(sale));
   const [productLink, setProductLink] = useState('');
@@ -125,15 +206,13 @@ function SaleBillForm({ sale, customers, onSubmit, onCancel, loading }) {
     });
   const removeItem = (idx) => setF((p) => ({ ...p, items: p.items.filter((_, i) => i !== idx) }));
 
-  const onCustomerName = (e) => {
-    const name = e.target.value;
-    const match = customers.find((c) => c.name?.toLowerCase() === name.trim().toLowerCase());
-    setF((p) => ({
-      ...p,
-      customerName: name,
-      customerPhone: match && !p.customerPhone ? match.phone || '' : p.customerPhone,
-      customerAddress: match && !p.customerAddress ? match.address || '' : p.customerAddress,
-    }));
+  // Picking (or switching to) a customer replaces all customer fields on the bill;
+  // email is cleared because the Customers table doesn't store one.
+  const onSelectCustomer = (id) => {
+    const c = customers.find((x) => x.id === id);
+    setF((p) => (c
+      ? { ...p, customerId: id, customerName: c.name || '', customerPhone: c.phone || '', customerEmail: '', customerAddress: c.address || '' }
+      : { ...p, customerId: '', customerName: '', customerPhone: '', customerEmail: '', customerAddress: '' }));
   };
 
   const onDeliveryDepends = (e) => {
@@ -165,18 +244,18 @@ function SaleBillForm({ sale, customers, onSubmit, onCancel, loading }) {
     if (!f.customerName.trim()) return toast.error('Please enter customer name.');
     if (!f.items.length) return toast.error('Add at least one item.');
     if (f.items.some((i) => !i.name.trim())) return toast.error('Please fill item name for all rows.');
-    onSubmit(invoicePreview);
+    onSubmit(invoicePreview, { customerId: f.customerId });
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <Section title="Customer Details">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input label="Customer Name" required placeholder="Full name" list="sale-customers"
-            value={f.customerName} onChange={onCustomerName} />
-          <datalist id="sale-customers">
-            {customers.map((c) => <option key={c.id} value={c.name} />)}
-          </datalist>
+          <div className="sm:col-span-2">
+            <CustomerPicker customers={customers} selectedId={f.customerId} onSelect={onSelectCustomer} />
+          </div>
+          <Input label="Customer Name" required placeholder="Full name"
+            value={f.customerName} onChange={set('customerName')} />
           <Input label="Phone (WhatsApp)" placeholder="+91 XXXXX XXXXX" value={f.customerPhone} onChange={set('customerPhone')} />
           <Input label="Email" placeholder="email@example.com" value={f.customerEmail} onChange={set('customerEmail')} />
           <Input label="Address" placeholder="City, State" value={f.customerAddress} onChange={set('customerAddress')} />
@@ -484,7 +563,7 @@ function SaleExpandedRow({ sale, linkedIncome, linkedExpenses, colSpan, onAddExp
 
 export default function Sales() {
   const { data, loading, add, update, remove } = useFirestore('sales');
-  const { data: customers } = useFirestore('customers');
+  const { data: customers, add: addCustomer, update: updateCustomer } = useFirestore('customers');
   const { data: incomeData, add: addIncome, update: updateIncome, remove: removeIncome } = useFirestore('income');
   const { data: expenseData, add: addExpense, remove: removeExpense } = useFirestore('expenses');
 
@@ -528,9 +607,46 @@ export default function Sales() {
     description: `Sale ${sale.invoiceNumber || ''}: ${sale.itemName || ''}${sale.customerName ? ' — ' + sale.customerName : ''}`.trim(),
   });
 
-  const handleSaveBill = async (form) => {
+  // Finds the bill's customer (picked from the dropdown, else same phone, else same name when
+  // there's no phone) or adds a new one. Existing details are never overwritten — only blanks filled.
+  const syncCustomer = async (invoice, selectedId) => {
+    const digits = (p) => String(p || '').replace(/\D/g, '').slice(-10);
+    const phone = digits(invoice.customerPhone);
+    const name = invoice.customerName.trim().toLowerCase();
+    const sameName = (c) => (c.name || '').trim().toLowerCase() === name;
+
+    const existing =
+      customers.find((c) => c.id === selectedId) ||
+      (phone && customers.find((c) => digits(c.phone) === phone)) ||
+      customers.find((c) => sameName(c) && (!phone || !digits(c.phone)));
+
+    if (existing) {
+      const fill = {};
+      if (!existing.phone && invoice.customerPhone) fill.phone = invoice.customerPhone;
+      if (!existing.address && invoice.customerAddress) fill.address = invoice.customerAddress;
+      if (Object.keys(fill).length) await updateCustomer(existing.id, fill);
+      return { id: existing.id, created: false };
+    }
+    const id = await addCustomer({
+      name: invoice.customerName,
+      phone: invoice.customerPhone,
+      address: invoice.customerAddress,
+    });
+    return { id, created: true };
+  };
+
+  const handleSaveBill = async (form, { customerId: selectedCustomerId } = {}) => {
     setSubmitting(true);
     try {
+      let customerId = selectedCustomerId || editing?.customerId || '';
+      try {
+        const result = await syncCustomer(form, selectedCustomerId);
+        customerId = result.id;
+        if (result.created) toast.success(`${form.customerName} added to Customers`);
+      } catch {
+        toast.error('Bill will be saved, but the customer could not be added to Customers');
+      }
+
       const invoiceNumber = editing?.invoiceNumber || nextInvoiceNumber(data);
       const saleDate = editing?.date || todayISO();
       const parsedDate = new Date(`${saleDate}T00:00:00`);
@@ -546,6 +662,7 @@ export default function Sales() {
         publicId,
         invoice,
         date: saleDate,
+        customerId,
         customerName: invoice.customerName,
         customerPhone: invoice.customerPhone,
         itemName: itemsSummary(invoice.items),
@@ -837,3 +954,4 @@ export default function Sales() {
     </div>
   );
 }
+
