@@ -237,7 +237,8 @@ function ExpenseTab() {
   const [deleting, setDeleting] = useState(false);
 
   const bySource = useMemo(() => {
-    if (sourceFilter === 'bookings') return data.filter((r) => r.reference);
+    if (sourceFilter === 'sales') return data.filter((r) => r.source === 'Sale');
+    if (sourceFilter === 'bookings') return data.filter((r) => r.reference && r.source !== 'Sale');
     if (sourceFilter === 'other') return data.filter((r) => !r.reference);
     return data;
   }, [data, sourceFilter]);
@@ -272,6 +273,7 @@ function ExpenseTab() {
   const filterTabs = [
     { key: 'all', label: 'All' },
     { key: 'bookings', label: 'Bookings' },
+    { key: 'sales', label: 'Sales' },
     { key: 'other', label: 'Other' },
   ];
 

@@ -1,7 +1,7 @@
 import { AlertTriangle } from 'lucide-react';
 import Button from './Button';
 
-export default function ConfirmDialog({ open, onClose, onConfirm, title, message, loading }) {
+export default function ConfirmDialog({ open, onClose, onConfirm, title, message, loading, confirmLabel = 'Delete' }) {
   if (!open) return null;
 
   return (
@@ -22,7 +22,7 @@ export default function ConfirmDialog({ open, onClose, onConfirm, title, message
             Cancel
           </Button>
           <Button variant="danger" className="flex-1" onClick={onConfirm} loading={loading}>
-            Delete
+            {confirmLabel}
           </Button>
         </div>
       </div>

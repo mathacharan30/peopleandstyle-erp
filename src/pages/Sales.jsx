@@ -1,9 +1,19 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useForm } from 'react-hook-form';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import {
+  Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingDown, Download, Eye,
+  MessageCircle, Link2, Loader2, X,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useFirestore } from '../hooks/useFirestore';
 import { filterBySearch, formatDate, formatCurrency } from '../utils/helpers';
+import {
+  SALE_STATUSES, INVOICE_PAYMENT_MODES, SALE_EXPENSE_CATEGORIES,
+  isPaidStatus, saleStatus, computeSaleTotals, nextInvoiceNumber, formatInvoiceDate, todayISO,
+  generatePublicId, publicInvoiceUrl, downloadInvoicePDF, openInvoicePDF, whatsappShareUrl,
+  fetchProductFromLink,
+} from '../utils/saleInvoice';
+import { savePublicInvoice, deletePublicInvoice } from '../services/firebase/publicInvoices';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Select from '../components/ui/Select';
@@ -14,61 +24,461 @@ import SearchInput from '../components/ui/SearchInput';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 
-const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Card'];
+const STATUS_STYLES = {
+  'Bill Sent': 'bg-yellow-100 text-yellow-800',
+  'Payment Received': 'bg-green-100 text-green-800',
+  Shipped: 'bg-blue-100 text-blue-800',
+  Delivered: 'bg-purple-100 text-purple-800',
+  Cancelled: 'bg-red-100 text-red-700',
+};
 
-function SaleForm({ defaultValues, customers, onSubmit, onCancel, loading }) {
-  const { register, handleSubmit, formState: { errors } } = useForm({ defaultValues });
-  const customerOptions = customers.map((c) => ({ value: c.name, label: c.name }));
+const emptyItem = () => ({ name: '', hsn: '', qty: 1, rate: '' });
+
+const linkedIncomeOf = (sale, incomeData) =>
+  incomeData.filter((i) => i.saleId === sale.id || (!i.saleId && i.reference === sale.id));
+const linkedExpensesOf = (sale, expenseData) => expenseData.filter((e) => e.saleId === sale.id);
+
+const itemsSummary = (items) =>
+  items.length <= 1 ? items[0]?.name || '' : `${items[0].name} +${items.length - 1} more`;
+
+// Builds the form's starting values — from an invoice sale, an old manual sale, or blank.
+function initialFormState(sale) {
+  const inv = sale?.invoice;
+  if (inv) {
+    return {
+      customerName: inv.customerName || '',
+      customerPhone: inv.customerPhone || '',
+      customerEmail: inv.customerEmail || '',
+      customerAddress: inv.customerAddress || '',
+      paymentMode: inv.paymentMode || 'Cash',
+      paymentReference: inv.paymentReference || '',
+      discount: inv.discount ?? 0,
+      deliveryAmount: inv.deliveryCharge?.depends ? '' : inv.deliveryCharge?.amount ?? 0,
+      deliveryDepends: !!inv.deliveryCharge?.depends,
+      items: inv.items.map((i) => ({ name: i.name, hsn: i.hsn || '', qty: i.qty, rate: i.rate })),
+    };
+  }
+  return {
+    customerName: sale?.customerName || '',
+    customerPhone: sale?.customerPhone || '',
+    customerEmail: '',
+    customerAddress: '',
+    paymentMode: sale?.paymentMethod && INVOICE_PAYMENT_MODES.includes(sale.paymentMethod) ? sale.paymentMethod : 'Cash',
+    paymentReference: '',
+    discount: 0,
+    deliveryAmount: 0,
+    deliveryDepends: false,
+    items: sale
+      ? [{ name: sale.itemName || '', hsn: '', qty: sale.quantity || 1, rate: sale.unitPrice || sale.totalAmount || '' }]
+      : [emptyItem()],
+  };
+}
+
+function toInvoicePayload(f) {
+  return {
+    type: 'sale',
+    customerName: f.customerName.trim(),
+    customerPhone: f.customerPhone.trim(),
+    customerEmail: f.customerEmail.trim(),
+    customerAddress: f.customerAddress.trim(),
+    paymentMode: f.paymentMode,
+    paymentReference: f.paymentReference.trim(),
+    discount: f.discount === '' ? 0 : Number(f.discount) || 0,
+    deliveryCharge: {
+      depends: f.deliveryDepends,
+      amount: f.deliveryDepends ? 0 : parseFloat(f.deliveryAmount) || 0,
+    },
+    items: f.items.map((i) => ({
+      name: i.name.trim(),
+      hsn: String(i.hsn || '').trim(),
+      qty: parseFloat(i.qty) || 1,
+      rate: parseFloat(i.rate) || 0,
+    })),
+  };
+}
+
+function Section({ title, children, right }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between pb-1 border-b border-gray-100">
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{title}</h3>
+        {right}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SaleBillForm({ sale, customers, onSubmit, onCancel, loading }) {
+  const [f, setF] = useState(() => initialFormState(sale));
+  const [productLink, setProductLink] = useState('');
+  const [fetching, setFetching] = useState(false);
+
+  const set = (key) => (e) => setF((p) => ({ ...p, [key]: e.target.value }));
+  const setItem = (idx, key, value) =>
+    setF((p) => ({ ...p, items: p.items.map((it, i) => (i === idx ? { ...it, [key]: value } : it)) }));
+  const addItem = (item = emptyItem()) =>
+    setF((p) => {
+      // Fill the blank starter row instead of leaving it empty above the new item.
+      const blank = p.items.length === 1 && !p.items[0].name.trim() && !p.items[0].rate;
+      return { ...p, items: blank ? [item] : [...p.items, item] };
+    });
+  const removeItem = (idx) => setF((p) => ({ ...p, items: p.items.filter((_, i) => i !== idx) }));
+
+  const onCustomerName = (e) => {
+    const name = e.target.value;
+    const match = customers.find((c) => c.name?.toLowerCase() === name.trim().toLowerCase());
+    setF((p) => ({
+      ...p,
+      customerName: name,
+      customerPhone: match && !p.customerPhone ? match.phone || '' : p.customerPhone,
+      customerAddress: match && !p.customerAddress ? match.address || '' : p.customerAddress,
+    }));
+  };
+
+  const onDeliveryDepends = (e) => {
+    const depends = e.target.checked;
+    setF((p) => ({ ...p, deliveryDepends: depends, deliveryAmount: depends ? '' : p.deliveryAmount || 0 }));
+  };
+
+  const handleFetchProduct = async () => {
+    if (!productLink.trim()) return;
+    setFetching(true);
+    try {
+      const product = await fetchProductFromLink(productLink);
+      addItem({ name: product.name, hsn: '', qty: 1, rate: product.price || '' });
+      setProductLink('');
+      if (product.price) toast.success(`Added ${product.name}`);
+      else toast(`Added ${product.name} — no price on the listing, enter the rate`, { icon: '⚠️' });
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const invoicePreview = toInvoicePayload(f);
+  const totals = computeSaleTotals(invoicePreview);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!f.customerName.trim()) return toast.error('Please enter customer name.');
+    if (!f.items.length) return toast.error('Add at least one item.');
+    if (f.items.some((i) => !i.name.trim())) return toast.error('Please fill item name for all rows.');
+    onSubmit(invoicePreview);
+  };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Input
-          label="Date" type="date" required
-          error={errors.date?.message}
-          {...register('date', { required: 'Date is required' })}
-        />
-        <Select
-          label="Customer"
-          options={customerOptions}
-          placeholder="Select customer"
-          {...register('customerName')}
-        />
-        <div className="sm:col-span-2">
-          <Input
-            label="Item / Product Name" placeholder="Product sold" required
-            error={errors.itemName?.message}
-            {...register('itemName', { required: 'Item name is required' })}
-          />
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <Section title="Customer Details">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input label="Customer Name" required placeholder="Full name" list="sale-customers"
+            value={f.customerName} onChange={onCustomerName} />
+          <datalist id="sale-customers">
+            {customers.map((c) => <option key={c.id} value={c.name} />)}
+          </datalist>
+          <Input label="Phone (WhatsApp)" placeholder="+91 XXXXX XXXXX" value={f.customerPhone} onChange={set('customerPhone')} />
+          <Input label="Email" placeholder="email@example.com" value={f.customerEmail} onChange={set('customerEmail')} />
+          <Input label="Address" placeholder="City, State" value={f.customerAddress} onChange={set('customerAddress')} />
         </div>
-        <Input
-          label="Quantity" type="number" placeholder="1"
-          {...register('quantity', { min: { value: 1, message: 'Min 1' } })}
-        />
-        <Input
-          label="Unit Price (₹)" type="number" placeholder="0"
-          {...register('unitPrice', { min: { value: 0, message: 'Must be positive' } })}
-        />
-        <Input
-          label="Total Amount (₹)" type="number" placeholder="0" required
-          error={errors.totalAmount?.message}
-          {...register('totalAmount', { required: 'Total amount is required', min: { value: 1, message: 'Must be > 0' } })}
-        />
-        <Select
-          label="Payment Method"
-          options={PAYMENT_METHODS}
-          placeholder="Select method"
-          {...register('paymentMethod')}
-        />
-      </div>
-      <Textarea label="Description / Notes" placeholder="Notes..." {...register('description')} />
+      </Section>
+
+      <Section title="Payment Details">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Select label="Payment Mode" options={INVOICE_PAYMENT_MODES} value={f.paymentMode} onChange={set('paymentMode')} />
+          <Input label="Transaction Reference" placeholder="Txn ID / N/A" value={f.paymentReference} onChange={set('paymentReference')} />
+          <Input label="Discount %" type="number" min="0" max="100" placeholder="0" value={f.discount} onChange={set('discount')} />
+          <Input label="Delivery Charges (₹)" type="number" min="0" step="0.01" placeholder="0.00"
+            value={f.deliveryAmount} onChange={set('deliveryAmount')} disabled={f.deliveryDepends} />
+          <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2 sm:pt-6">
+            <input type="checkbox" checked={f.deliveryDepends} onChange={onDeliveryDepends} className="rounded border-gray-300" />
+            Depends (charge actuals later)
+          </label>
+        </div>
+      </Section>
+
+      <Section title="Items">
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <Input label="Add from website listing" placeholder="Paste link, e.g. https://peopleandstyle.in/product/…"
+              value={productLink} onChange={(e) => setProductLink(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleFetchProduct(); } }} />
+          </div>
+          <Button type="button" variant="secondary" onClick={handleFetchProduct} loading={fetching} disabled={!productLink.trim()}>
+            <Link2 size={14} /> Add
+          </Button>
+        </div>
+
+        <div className="hidden sm:grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
+          <span className="col-span-4">Description</span>
+          <span className="col-span-2">HSN Code</span>
+          <span className="col-span-1 text-right">Qty</span>
+          <span className="col-span-2 text-right">Rate (₹)</span>
+          <span className="col-span-2 text-right">Amount (₹)</span>
+        </div>
+        <div className="space-y-3 sm:space-y-2">
+          {f.items.map((it, idx) => (
+            <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+              <input className="col-span-12 sm:col-span-4 form-cell" placeholder="Item name"
+                value={it.name} onChange={(e) => setItem(idx, 'name', e.target.value)} />
+              <input className="col-span-4 sm:col-span-2 form-cell" placeholder="e.g. 7117"
+                value={it.hsn} onChange={(e) => setItem(idx, 'hsn', e.target.value)} />
+              <input className="col-span-2 sm:col-span-1 form-cell text-right" type="number" min="1" placeholder="1"
+                value={it.qty} onChange={(e) => setItem(idx, 'qty', e.target.value)} />
+              <input className="col-span-3 sm:col-span-2 form-cell text-right" type="number" min="0" step="0.01" placeholder="0.00"
+                value={it.rate} onChange={(e) => setItem(idx, 'rate', e.target.value)} />
+              <div className="col-span-2 sm:col-span-2 text-right text-sm text-gray-600 tabular-nums">
+                {((parseFloat(it.qty) || 0) * (parseFloat(it.rate) || 0)).toFixed(2)}
+              </div>
+              <button type="button" onClick={() => removeItem(idx)} title="Remove item"
+                className="col-span-1 justify-self-end p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50">
+                <X size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={() => addItem()} className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+          + Add Item
+        </button>
+
+        <div className="ml-auto max-w-xs text-sm space-y-1 pt-2 border-t border-gray-100">
+          <div className="flex justify-between text-gray-600"><span>Sub Total</span><span>₹ {totals.subtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between text-red-600"><span>Discount ({invoicePreview.discount}%)</span><span>- ₹ {totals.discountAmt.toFixed(2)}</span></div>
+          {(f.deliveryDepends || totals.deliveryAmount > 0) && (
+            <div className="flex justify-between text-gray-600">
+              <span>Delivery Charges</span>
+              <span>{f.deliveryDepends ? 'Depends' : `₹ ${totals.deliveryAmount.toFixed(2)}`}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-semibold text-gray-900 pt-1"><span>Total Amount</span><span>₹ {totals.grandTotal.toFixed(2)}</span></div>
+        </div>
+      </Section>
+
       <div className="flex gap-3 pt-2">
         <Button variant="secondary" className="flex-1" type="button" onClick={onCancel}>Cancel</Button>
         <Button className="flex-1" type="submit" loading={loading}>
-          {defaultValues?.id ? 'Update' : 'Add'} Sale
+          {sale?.invoice ? 'Update Bill' : 'Generate Sale Bill'}
         </Button>
       </div>
     </form>
+  );
+}
+
+function PaymentForm({ sale, newStatus, onSubmit, onCancel, loading }) {
+  const total = sale.invoice ? computeSaleTotals(sale.invoice).grandTotal : Number(sale.totalAmount) || 0;
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    defaultValues: {
+      amount: total,
+      date: todayISO(),
+      paymentMethod: sale.invoice?.paymentMode || 'Cash',
+      paymentReference: sale.invoice?.paymentReference || '',
+    },
+  });
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div className="bg-green-50 rounded-lg p-3 text-sm">
+        <span className="font-semibold text-green-800">{sale.customerName}</span>
+        <span className="text-green-500 ml-2 text-xs font-mono">{sale.invoiceNumber}</span>
+        <div className="text-xs text-green-600 mt-1">
+          Moving to “{newStatus}” records this payment under Income. Bill total: {formatCurrency(total)}
+        </div>
+      </div>
+      <Input label="Amount Received (₹)" type="number" required error={errors.amount?.message}
+        {...register('amount', { required: 'Amount is required', min: { value: 1, message: 'Must be > 0' } })} />
+      <div className="grid grid-cols-2 gap-4">
+        <Input label="Date" type="date" required {...register('date', { required: true })} />
+        <Select label="Payment Mode" options={INVOICE_PAYMENT_MODES} {...register('paymentMethod')} />
+      </div>
+      <Input label="Transaction Reference" placeholder="Txn ID / N/A" {...register('paymentReference')} />
+      <div className="flex gap-3 pt-2">
+        <Button variant="secondary" className="flex-1" type="button" onClick={onCancel}>Cancel</Button>
+        <Button className="flex-1" type="submit" loading={loading}>Record Payment</Button>
+      </div>
+    </form>
+  );
+}
+
+function SaleExpenseForm({ sale, onSubmit, onCancel, loading }) {
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    defaultValues: {
+      date: todayISO(),
+      category: 'Shipping',
+      amount: '',
+      paidTo: '',
+      paymentMethod: 'Cash',
+      description: `${sale.customerName} — ${sale.invoiceNumber || 'Sale'}`,
+    },
+  });
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div className="rounded-lg p-3 text-sm bg-red-50">
+        <span className="font-semibold text-red-800">{sale.customerName}</span>
+        <span className="ml-2 text-xs font-mono text-red-400">{sale.invoiceNumber}</span>
+      </div>
+      <Input label="Amount (₹)" type="number" placeholder="0" required error={errors.amount?.message}
+        {...register('amount', { required: 'Amount is required', min: { value: 1, message: 'Must be > 0' } })} />
+      <div className="grid grid-cols-2 gap-4">
+        <Input label="Date" type="date" required {...register('date', { required: true })} />
+        <Select label="Category" options={SALE_EXPENSE_CATEGORIES} {...register('category')} />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Input label="Paid To" placeholder="Courier / Person" {...register('paidTo')} />
+        <Select label="Payment Method" options={['Cash', 'UPI', 'Bank Transfer', 'Card']} {...register('paymentMethod')} />
+      </div>
+      <Textarea label="Description" rows={2} {...register('description')} />
+      <div className="flex gap-3 pt-2">
+        <Button variant="secondary" className="flex-1" type="button" onClick={onCancel}>Cancel</Button>
+        <Button variant="danger" className="flex-1" type="submit" loading={loading}>Add Expense</Button>
+      </div>
+    </form>
+  );
+}
+
+function ShareActions({ sale, compact = false }) {
+  const [busy, setBusy] = useState('');
+  if (!sale.invoice || !sale.publicId) return null;
+
+  const run = (key, fn) => async (e) => {
+    e?.stopPropagation();
+    setBusy(key);
+    try { await fn(); } catch { toast.error('Could not create the PDF'); } finally { setBusy(''); }
+  };
+  const copyLink = async (e) => {
+    e?.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(publicInvoiceUrl(sale.publicId));
+      toast.success('Customer link copied');
+    } catch {
+      toast.error('Could not copy link');
+    }
+  };
+  const sendWhatsApp = (e) => {
+    e?.stopPropagation();
+    window.open(whatsappShareUrl(sale), '_blank', 'noopener');
+  };
+
+  if (compact) {
+    const iconBtn = 'p-1.5 rounded-lg text-gray-400 transition-colors';
+    return (
+      <>
+        <button title="Download PDF" onClick={run('dl', () => downloadInvoicePDF(sale.invoice))}
+          className={`${iconBtn} hover:text-indigo-600 hover:bg-indigo-50`}>
+          {busy === 'dl' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+        </button>
+        <button title="Send on WhatsApp" onClick={sendWhatsApp} className={`${iconBtn} hover:text-green-600 hover:bg-green-50`}>
+          <MessageCircle size={15} />
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button size="sm" onClick={run('dl', () => downloadInvoicePDF(sale.invoice))} loading={busy === 'dl'}>
+        <Download size={14} /> Download PDF
+      </Button>
+      <Button size="sm" variant="secondary" onClick={run('view', () => openInvoicePDF(sale.invoice))} loading={busy === 'view'}>
+        <Eye size={14} /> View
+      </Button>
+      <Button size="sm" className="!bg-green-600 hover:!bg-green-700 text-white" onClick={sendWhatsApp}>
+        <MessageCircle size={14} /> Send on WhatsApp
+      </Button>
+      <Button size="sm" variant="secondary" onClick={copyLink}>
+        <Link2 size={14} /> Copy Link
+      </Button>
+    </div>
+  );
+}
+
+function SaleExpandedRow({ sale, linkedIncome, linkedExpenses, colSpan, onAddExpense }) {
+  const totalIncome = linkedIncome.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const totalExpenses = linkedExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const net = totalIncome - totalExpenses;
+  const inv = sale.invoice;
+
+  return (
+    <tr className="bg-gray-50/60">
+      <td colSpan={colSpan} className="px-4 py-4 border-b border-gray-100 space-y-4">
+        <div className="flex items-center gap-6 flex-wrap">
+          <div>
+            <span className="text-xs text-gray-400 uppercase font-medium block">Income</span>
+            <span className="font-semibold text-green-600">{formatCurrency(totalIncome)}</span>
+          </div>
+          <div>
+            <span className="text-xs text-gray-400 uppercase font-medium block">Expenses</span>
+            <span className="font-semibold text-red-500">{formatCurrency(totalExpenses)}</span>
+          </div>
+          <div>
+            <span className="text-xs text-gray-400 uppercase font-medium block">Net</span>
+            <span className={`font-semibold ${net >= 0 ? 'text-indigo-600' : 'text-red-600'}`}>{formatCurrency(net)}</span>
+          </div>
+          <div className="ml-auto flex gap-2 flex-wrap items-center">
+            <ShareActions sale={sale} />
+            <button onClick={onAddExpense}
+              className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 font-medium transition-colors flex items-center gap-1">
+              <TrendingDown size={12} /> Expense
+            </button>
+          </div>
+        </div>
+
+        {inv && (
+          <div className="bg-white rounded-lg border border-gray-100 px-3 py-2 text-xs text-gray-600 space-y-1">
+            {inv.items.map((i, idx) => (
+              <div key={idx} className="flex justify-between gap-4">
+                <span>{i.name}{i.hsn ? <span className="text-gray-400"> · HSN {i.hsn}</span> : null} × {i.qty}</span>
+                <span className="tabular-nums">₹ {(i.qty * i.rate).toFixed(2)}</span>
+              </div>
+            ))}
+            {inv.customerPhone && <div className="text-gray-400 pt-1">Phone: {inv.customerPhone}</div>}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-white rounded-lg border border-gray-100 overflow-hidden">
+            <div className="px-3 py-2 bg-green-50 border-b border-green-100">
+              <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">Payments Received ({linkedIncome.length})</span>
+            </div>
+            {linkedIncome.length === 0 ? (
+              <p className="px-3 py-3 text-xs text-gray-400 italic">Recorded automatically when status moves to Payment Received</p>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {linkedIncome.map((item) => (
+                  <div key={item.id} className="px-3 py-2.5 flex justify-between items-center">
+                    <div>
+                      <div className="text-xs font-medium text-gray-700">{item.source}</div>
+                      <div className="text-xs text-gray-400">{formatDate(item.date)}{item.paymentMethod ? ` · ${item.paymentMethod}` : ''}</div>
+                    </div>
+                    <span className="text-sm font-semibold text-green-600 whitespace-nowrap ml-4">{formatCurrency(item.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-100 overflow-hidden">
+            <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+              <span className="text-xs font-semibold text-red-700 uppercase tracking-wide">Expenses ({linkedExpenses.length})</span>
+            </div>
+            {linkedExpenses.length === 0 ? (
+              <p className="px-3 py-3 text-xs text-gray-400 italic">No expenses recorded yet</p>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {linkedExpenses.map((item) => (
+                  <div key={item.id} className="px-3 py-2.5 flex justify-between items-center">
+                    <div>
+                      <div className="text-xs font-medium text-gray-700">{item.category}</div>
+                      <div className="text-xs text-gray-400">{formatDate(item.date)}{item.paidTo ? ` · ${item.paidTo}` : ''}</div>
+                      {item.description && <div className="text-xs text-gray-400 truncate max-w-xs">{item.description}</div>}
+                    </div>
+                    <span className="text-sm font-semibold text-red-500 whitespace-nowrap ml-4">{formatCurrency(item.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -76,151 +486,353 @@ export default function Sales() {
   const { data, loading, add, update, remove } = useFirestore('sales');
   const { data: customers } = useFirestore('customers');
   const { data: incomeData, add: addIncome, update: updateIncome, remove: removeIncome } = useFirestore('income');
+  const { data: expenseData, add: addExpense, remove: removeExpense } = useFirestore('expenses');
+
   const [search, setSearch] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [shareSale, setShareSale] = useState(null);
+  const [paymentTarget, setPaymentTarget] = useState(null); // { sale, newStatus }
+  const [unpayTarget, setUnpayTarget] = useState(null); // { sale, newStatus, linked }
+  const [expenseSale, setExpenseSale] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  const filtered = filterBySearch(data, search, ['customerName', 'itemName', 'description', 'paymentMethod']);
-  const totalSales = useMemo(() => data.reduce((s, r) => s + (Number(r.totalAmount) || 0), 0), [data]);
+  let filtered = filterBySearch(data, search, ['invoiceNumber', 'customerName', 'customerPhone', 'itemName', 'status']);
+  if (statusFilter) filtered = filtered.filter((s) => saleStatus(s) === statusFilter);
 
-  const openAdd = () => { setEditing(null); setModalOpen(true); };
-  const openEdit = (r) => { setEditing(r); setModalOpen(true); };
-  const closeModal = () => { setModalOpen(false); setEditing(null); };
+  const { receivedTotal, pendingTotal } = useMemo(() => {
+    let receivedTotal = 0, pendingTotal = 0;
+    data.forEach((s) => {
+      const st = saleStatus(s);
+      if (isPaidStatus(st)) receivedTotal += Number(s.totalAmount) || 0;
+      else if (st === 'Bill Sent') pendingTotal += Number(s.totalAmount) || 0;
+    });
+    return { receivedTotal, pendingTotal };
+  }, [data]);
 
-  const buildIncomePayload = (payload, saleRef) => ({
+  const openAdd = () => { setEditing(null); setFormOpen(true); };
+  const openEdit = (s) => { setEditing(s); setFormOpen(true); };
+  const closeForm = () => { setFormOpen(false); setEditing(null); };
+
+  const incomePayload = (sale, { amount, date, paymentMethod }) => ({
     source: 'Sale',
-    amount: payload.totalAmount,
-    date: payload.date,
-    paymentMethod: payload.paymentMethod || '',
-    reference: saleRef,
-    description: `Sale: ${payload.itemName}${payload.customerName ? ' — ' + payload.customerName : ''}`,
+    amount: Number(amount) || 0,
+    date,
+    paymentMethod: paymentMethod || '',
+    reference: sale.invoiceNumber || sale.id,
+    saleId: sale.id,
+    description: `Sale ${sale.invoiceNumber || ''}: ${sale.itemName || ''}${sale.customerName ? ' — ' + sale.customerName : ''}`.trim(),
   });
 
-  const handleSubmit = async (formData) => {
+  const handleSaveBill = async (form) => {
     setSubmitting(true);
     try {
-      const payload = {
-        ...formData,
-        quantity: Number(formData.quantity) || 1,
-        unitPrice: Number(formData.unitPrice) || 0,
-        totalAmount: Number(formData.totalAmount) || 0,
+      const invoiceNumber = editing?.invoiceNumber || nextInvoiceNumber(data);
+      const saleDate = editing?.date || todayISO();
+      const parsedDate = new Date(`${saleDate}T00:00:00`);
+      const invoice = {
+        ...form,
+        invoiceNumber,
+        date: editing?.invoice?.date || formatInvoiceDate(isNaN(parsedDate) ? new Date() : parsedDate),
       };
+      const publicId = editing?.publicId || generatePublicId();
+      const { grandTotal } = computeSaleTotals(invoice);
+      const payload = {
+        invoiceNumber,
+        publicId,
+        invoice,
+        date: saleDate,
+        customerName: invoice.customerName,
+        customerPhone: invoice.customerPhone,
+        itemName: itemsSummary(invoice.items),
+        quantity: invoice.items.reduce((s, i) => s + i.qty, 0),
+        totalAmount: grandTotal,
+        paymentMethod: invoice.paymentMode,
+        status: editing ? saleStatus(editing) : 'Bill Sent',
+      };
+
+      await savePublicInvoice(publicId, invoice);
 
       if (editing) {
         await update(editing.id, payload);
-        const linked = incomeData.find((r) => r.reference === editing.id);
-        if (linked) await updateIncome(linked.id, buildIncomePayload(payload, editing.id));
+        // Keep the auto-recorded income in step with an edited bill total.
+        const linked = linkedIncomeOf(editing, incomeData);
+        if (linked.length === 1 && Number(linked[0].amount) === Number(editing.totalAmount)) {
+          await updateIncome(linked[0].id, {
+            amount: grandTotal,
+            reference: invoiceNumber,
+            saleId: editing.id,
+            description: incomePayload({ ...editing, ...payload }, {}).description,
+          });
+        }
+        toast.success(`${invoiceNumber} updated`);
+        closeForm();
       } else {
-        const saleId = await add(payload);
-        await addIncome(buildIncomePayload(payload, saleId));
+        const id = await add(payload);
+        toast.success(`${invoiceNumber} generated`);
+        closeForm();
+        setShareSale({ id, ...payload });
       }
-
-      toast.success(editing ? 'Sale updated' : 'Sale recorded');
-      closeModal();
-    } catch {
-      toast.error('Something went wrong');
+    } catch (e) {
+      console.error(e);
+      toast.error('Could not save the bill');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async () => {
-    setDeleting(true);
+  const handleStatusChange = async (sale, newStatus) => {
+    const current = saleStatus(sale);
+    if (newStatus === current) return;
+    const linked = linkedIncomeOf(sale, incomeData);
+
+    if (isPaidStatus(newStatus) && linked.length === 0) {
+      setPaymentTarget({ sale, newStatus });
+      return;
+    }
+    if (!isPaidStatus(newStatus) && linked.length > 0) {
+      setUnpayTarget({ sale, newStatus, linked });
+      return;
+    }
     try {
-      const linked = incomeData.find((r) => r.reference === deleteTarget.id);
-      await remove(deleteTarget.id);
-      if (linked) await removeIncome(linked.id);
+      await update(sale.id, { status: newStatus });
+      toast.success(`Status updated to ${newStatus}`);
+    } catch {
+      toast.error('Failed to update status');
+    }
+  };
+
+  const handleRecordPayment = async (form) => {
+    const { sale, newStatus } = paymentTarget;
+    setBusy(true);
+    try {
+      await addIncome(incomePayload(sale, form));
+      const changes = { status: newStatus, paymentMethod: form.paymentMethod };
+      if (sale.invoice) {
+        // Show the actual payment mode / reference on the customer's bill.
+        const invoice = { ...sale.invoice, paymentMode: form.paymentMethod, paymentReference: form.paymentReference.trim() };
+        changes.invoice = invoice;
+        if (sale.publicId) await savePublicInvoice(sale.publicId, invoice);
+      }
+      await update(sale.id, changes);
+      toast.success('Payment recorded in Income');
+      setPaymentTarget(null);
+    } catch {
+      toast.error('Failed to record payment');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUnpay = async () => {
+    const { sale, newStatus, linked } = unpayTarget;
+    setBusy(true);
+    try {
+      for (const i of linked) await removeIncome(i.id);
+      await update(sale.id, { status: newStatus });
+      toast.success(`Status updated to ${newStatus}, income entry removed`);
+      setUnpayTarget(null);
+    } catch {
+      toast.error('Failed to update status');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddExpense = async (form) => {
+    const sale = expenseSale;
+    setBusy(true);
+    try {
+      await addExpense({
+        ...form,
+        amount: Number(form.amount) || 0,
+        source: 'Sale',
+        saleId: sale.id,
+        reference: sale.invoiceNumber || sale.id,
+      });
+      toast.success('Expense recorded');
+      setExpenseSale(null);
+    } catch {
+      toast.error('Failed to save expense');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    const sale = deleteTarget;
+    setBusy(true);
+    try {
+      for (const i of linkedIncomeOf(sale, incomeData)) await removeIncome(i.id);
+      for (const e of linkedExpensesOf(sale, expenseData)) await removeExpense(e.id);
+      if (sale.publicId) await deletePublicInvoice(sale.publicId);
+      await remove(sale.id);
       toast.success('Sale deleted');
       setDeleteTarget(null);
     } catch {
       toast.error('Delete failed');
     } finally {
-      setDeleting(false);
+      setBusy(false);
     }
   };
+
+  const TABLE_COLS = 8;
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Sales</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{data.length} records · Total: {formatCurrency(totalSales)}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {data.length} bills · Received: {formatCurrency(receivedTotal)} · Awaiting payment: {formatCurrency(pendingTotal)}
+          </p>
         </div>
-        <Button onClick={openAdd}>
-          <Plus size={16} /> New Sale
-        </Button>
+        <Button onClick={openAdd}><Plus size={16} /> New Sale Bill</Button>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search sales..." />
+          <SearchInput value={search} onChange={setSearch} placeholder="Search bills..." />
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="">All Status</option>
+            {SALE_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
 
         {loading ? (
           <LoadingSpinner />
         ) : filtered.length === 0 ? (
           <EmptyState
-            title="No sales records"
-            description={search ? 'Try a different search' : 'Record your first sale'}
-            action={!search && <Button onClick={openAdd} size="sm"><Plus size={14} /> New Sale</Button>}
+            title="No sale bills"
+            description={search || statusFilter ? 'Try different filters' : 'Generate your first sale bill'}
+            action={!search && !statusFilter && <Button onClick={openAdd} size="sm"><Plus size={14} /> New Sale Bill</Button>}
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['Date', 'Customer', 'Item', 'Qty', 'Unit Price', 'Total', 'Payment', 'Actions'].map((h) => (
-                    <th key={h} className={`px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap ${h === 'Actions' ? 'text-right' : ''}`}>
+                  {['', 'Bill No', 'Date', 'Customer', 'Items', 'Total', 'Status', 'Actions'].map((h) => (
+                    <th key={h} className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap
+                      ${h === 'Actions' ? 'text-right' : ''} ${h === '' ? 'w-8' : ''}`}>
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{formatDate(r.date)}</td>
-                    <td className="px-5 py-3 font-medium text-gray-800 whitespace-nowrap">{r.customerName || '—'}</td>
-                    <td className="px-5 py-3 text-gray-700">
-                      <div className="font-medium">{r.itemName}</div>
-                      {r.description && <div className="text-xs text-gray-400 truncate max-w-xs">{r.description}</div>}
-                    </td>
-                    <td className="px-5 py-3 text-gray-600">{r.quantity || 1}</td>
-                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{formatCurrency(r.unitPrice)}</td>
-                    <td className="px-5 py-3 font-semibold text-indigo-600 whitespace-nowrap">{formatCurrency(r.totalAmount)}</td>
-                    <td className="px-5 py-3 text-gray-600">{r.paymentMethod || '—'}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
-                          <Pencil size={15} />
-                        </button>
-                        <button onClick={() => setDeleteTarget(r)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+              <tbody>
+                {filtered.map((s) => {
+                  const status = saleStatus(s);
+                  const isExpanded = expandedId === s.id;
+                  return (
+                    <Fragment key={s.id}>
+                      <tr onClick={() => setExpandedId((p) => (p === s.id ? null : s.id))}
+                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer border-b border-gray-50 ${isExpanded ? 'bg-gray-50/40' : ''}`}>
+                        <td className="px-3 py-3">
+                          <span className="p-0.5 rounded text-gray-400 inline-flex">
+                            {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{s.invoiceNumber || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(s.date)}</td>
+                        <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{s.customerName || '—'}</td>
+                        <td className="px-4 py-3 text-gray-700 max-w-xs truncate">{s.itemName}</td>
+                        <td className="px-4 py-3 font-semibold text-indigo-600 whitespace-nowrap">{formatCurrency(s.totalAmount)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <select value={status} onChange={(e) => handleStatusChange(s, e.target.value)}
+                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${STATUS_STYLES[status]}`}>
+                            {SALE_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <ShareActions sale={s} compact />
+                            <button title="Edit bill" onClick={(e) => { e.stopPropagation(); openEdit(s); }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+                              <Pencil size={15} />
+                            </button>
+                            <button title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <SaleExpandedRow
+                          sale={s}
+                          linkedIncome={linkedIncomeOf(s, incomeData)}
+                          linkedExpenses={linkedExpensesOf(s, expenseData)}
+                          colSpan={TABLE_COLS}
+                          onAddExpense={() => setExpenseSale(s)}
+                        />
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      <Modal open={modalOpen} onClose={closeModal} title={editing ? 'Edit Sale' : 'New Sale'} size="md">
-        <SaleForm defaultValues={editing} customers={customers} onSubmit={handleSubmit} onCancel={closeModal} loading={submitting} />
+      <Modal open={formOpen} onClose={closeForm} size="xl"
+        title={editing ? `Edit Sale Bill${editing.invoiceNumber ? ' — ' + editing.invoiceNumber : ''}` : 'New Sale Bill'}>
+        {formOpen && (
+          <SaleBillForm sale={editing} customers={customers} onSubmit={handleSaveBill} onCancel={closeForm} loading={submitting} />
+        )}
       </Modal>
+
+      <Modal open={!!shareSale} onClose={() => setShareSale(null)} title={`${shareSale?.invoiceNumber || ''} is ready`} size="md">
+        {shareSale && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Sale bill for <span className="font-medium text-gray-900">{shareSale.customerName}</span> ·{' '}
+              <span className="font-medium text-gray-900">{formatCurrency(shareSale.totalAmount)}</span>. Status set to “Bill Sent”.
+            </p>
+            {!shareSale.customerPhone && (
+              <p className="text-xs text-amber-600">No phone number on this bill — WhatsApp will ask you to pick the contact.</p>
+            )}
+            <ShareActions sale={shareSale} />
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!paymentTarget} onClose={() => setPaymentTarget(null)} title="Record Payment" size="md">
+        {paymentTarget && (
+          <PaymentForm sale={paymentTarget.sale} newStatus={paymentTarget.newStatus}
+            onSubmit={handleRecordPayment} onCancel={() => setPaymentTarget(null)} loading={busy} />
+        )}
+      </Modal>
+
+      <Modal open={!!expenseSale} onClose={() => setExpenseSale(null)} title={`Add Expense — ${expenseSale?.invoiceNumber || ''}`} size="md">
+        {expenseSale && (
+          <SaleExpenseForm sale={expenseSale} onSubmit={handleAddExpense} onCancel={() => setExpenseSale(null)} loading={busy} />
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!unpayTarget}
+        onClose={() => setUnpayTarget(null)}
+        onConfirm={handleUnpay}
+        loading={busy}
+        title={`Move to ${unpayTarget?.newStatus || ''}?`}
+        confirmLabel="Remove income & move"
+        message={`This sale has ${formatCurrency(unpayTarget?.linked.reduce((t, i) => t + (Number(i.amount) || 0), 0))} recorded as income. Moving it to “${unpayTarget?.newStatus}” will remove that income entry.`}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
-        loading={deleting}
+        loading={busy}
         title="Delete Sale"
-        message="Remove this sale record? This cannot be undone."
+        message={`Delete ${deleteTarget?.invoiceNumber || 'this sale'}? Its income and expense entries will be removed and the customer's link will stop working. This cannot be undone.`}
       />
     </div>
   );

@@ -12,6 +12,15 @@
   }
 }
 
+@layer components {
+  /* Compact input used in the sale bill item rows */
+  .form-cell {
+    @apply w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-900
+      placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
+      dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100;
+  }
+}
+
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;

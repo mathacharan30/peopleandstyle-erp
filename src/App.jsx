@@ -13,11 +13,14 @@ import Collaborations from './pages/Collaborations';
 import ContentPlanner from './pages/ContentPlanner';
 import ContentIdeas from './pages/ContentIdeas';
 import Sales from './pages/Sales';
+import PublicInvoice from './pages/PublicInvoice';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* Public: customers open this from the WhatsApp link — no login */}
+      <Route path="/invoice/:publicId" element={<PublicInvoice />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
           {/* Admin-only routes */}
