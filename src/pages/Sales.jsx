@@ -1,7 +1,7 @@
 import { useState, useMemo, Fragment } from 'react';
 import { useForm } from 'react-hook-form';
 import {
-  Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingDown, Download, Eye,
+  Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingDown, Download, Eye, FileText,
   MessageCircle, Link2, Loader2, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -64,7 +64,7 @@ function initialFormState(sale) {
     customerName: sale?.customerName || '',
     customerPhone: sale?.customerPhone || '',
     customerEmail: '',
-    customerAddress: '',
+    customerAddress: sale?.customerAddress || '',
     paymentMode: sale?.paymentMethod && INVOICE_PAYMENT_MODES.includes(sale.paymentMethod) ? sale.paymentMethod : 'Cash',
     paymentReference: '',
     discount: 0,
@@ -343,6 +343,84 @@ function SaleBillForm({ sale, customers, onSubmit, onCancel, loading }) {
   );
 }
 
+const QUICK_PAYMENT_METHODS = ['Cash', 'UPI', 'PhonePe', 'GPay', 'NEFT', 'Bank Transfer', 'Card'];
+
+// Simple sale record without a bill (the original Sales form). Saved as already paid.
+function QuickSaleForm({ sale, customers, onSubmit, onCancel, loading }) {
+  const [f, setF] = useState(() => ({
+    date: sale?.date || todayISO(),
+    customerId: sale?.customerId || '',
+    customerName: sale?.customerName || '',
+    customerPhone: sale?.customerPhone || '',
+    customerAddress: sale?.customerAddress || '',
+    itemName: sale?.itemName || '',
+    quantity: sale?.quantity ?? 1,
+    unitPrice: sale?.unitPrice ?? '',
+    totalAmount: sale?.totalAmount ?? '',
+    paymentMethod: sale?.paymentMethod || 'Cash',
+    description: sale?.description || '',
+  }));
+  // Total follows qty × price until the user types their own total.
+  const [totalTouched, setTotalTouched] = useState(
+    () => !!sale && Number(sale.totalAmount) !== (Number(sale.quantity) || 1) * (Number(sale.unitPrice) || 0)
+  );
+
+  const set = (key) => (e) => setF((p) => ({ ...p, [key]: e.target.value }));
+  const setQtyOrPrice = (key) => (e) => setF((p) => {
+    const next = { ...p, [key]: e.target.value };
+    if (!totalTouched) {
+      const total = (parseFloat(next.quantity) || 0) * (parseFloat(next.unitPrice) || 0);
+      next.totalAmount = total ? String(total) : '';
+    }
+    return next;
+  });
+
+  const onSelectCustomer = (id) => {
+    const c = customers.find((x) => x.id === id);
+    setF((p) => (c
+      ? { ...p, customerId: id, customerName: c.name || '', customerPhone: c.phone || '', customerAddress: c.address || '' }
+      : { ...p, customerId: '', customerName: '', customerPhone: '', customerAddress: '' }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!f.date) return toast.error('Date is required');
+    if (!f.itemName.trim()) return toast.error('Item name is required');
+    if (!(Number(f.totalAmount) > 0)) return toast.error('Total amount must be more than 0');
+    onSubmit(f, { customerId: f.customerId });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+        Records a sale without generating a bill. It is saved as <b>Payment Received</b> and added to Income.
+      </p>
+      <CustomerPicker customers={customers} selectedId={f.customerId} onSelect={onSelectCustomer} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Input label="Customer Name" placeholder="Full name" value={f.customerName} onChange={set('customerName')} />
+        <Input label="Phone" placeholder="+91 XXXXX XXXXX" value={f.customerPhone} onChange={set('customerPhone')} />
+        <div className="sm:col-span-2">
+          <Input label="Address" placeholder="City, State" value={f.customerAddress} onChange={set('customerAddress')} />
+        </div>
+        <Input label="Date" type="date" required value={f.date} onChange={set('date')} />
+        <Select label="Payment Method" options={QUICK_PAYMENT_METHODS} value={f.paymentMethod} onChange={set('paymentMethod')} />
+        <div className="sm:col-span-2">
+          <Input label="Item / Product Name" placeholder="Product sold" required value={f.itemName} onChange={set('itemName')} />
+        </div>
+        <Input label="Quantity" type="number" min="1" placeholder="1" value={f.quantity} onChange={setQtyOrPrice('quantity')} />
+        <Input label="Unit Price (₹)" type="number" min="0" placeholder="0" value={f.unitPrice} onChange={setQtyOrPrice('unitPrice')} />
+        <Input label="Total Amount (₹)" type="number" min="0" placeholder="0" required value={f.totalAmount}
+          onChange={(e) => { setTotalTouched(true); set('totalAmount')(e); }} />
+      </div>
+      <Textarea label="Description / Notes" placeholder="Notes..." value={f.description} onChange={set('description')} />
+      <div className="flex gap-3 pt-2">
+        <Button variant="secondary" className="flex-1" type="button" onClick={onCancel}>Cancel</Button>
+        <Button className="flex-1" type="submit" loading={loading}>{sale ? 'Update' : 'Add'} Sale</Button>
+      </div>
+    </form>
+  );
+}
+
 function PaymentForm({ sale, newStatus, onSubmit, onCancel, loading }) {
   const total = sale.invoice ? computeSaleTotals(sale.invoice).grandTotal : Number(sale.totalAmount) || 0;
   const { register, handleSubmit, formState: { errors } } = useForm({
@@ -511,6 +589,16 @@ function SaleExpandedRow({ sale, linkedIncome, linkedExpenses, colSpan, onAddExp
             {inv.customerPhone && <div className="text-gray-400 pt-1">Phone: {inv.customerPhone}</div>}
           </div>
         )}
+        {!inv && (
+          <div className="bg-white rounded-lg border border-gray-100 px-3 py-2 text-xs text-gray-600 space-y-1">
+            <div className="flex justify-between gap-4">
+              <span>{sale.itemName} × {sale.quantity || 1}{sale.unitPrice ? ` @ ${formatCurrency(sale.unitPrice)}` : ''}</span>
+              <span className="text-gray-400">{sale.paymentMethod || ''} · no bill</span>
+            </div>
+            {sale.customerPhone && <div className="text-gray-400">Phone: {sale.customerPhone}</div>}
+            {sale.description && <div className="text-gray-500">{sale.description}</div>}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white rounded-lg border border-gray-100 overflow-hidden">
@@ -572,6 +660,8 @@ export default function Sales() {
   const [expandedId, setExpandedId] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [editingQuick, setEditingQuick] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [shareSale, setShareSale] = useState(null);
   const [paymentTarget, setPaymentTarget] = useState(null); // { sale, newStatus }
@@ -580,7 +670,7 @@ export default function Sales() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  let filtered = filterBySearch(data, search, ['invoiceNumber', 'customerName', 'customerPhone', 'itemName', 'status']);
+  let filtered = filterBySearch(data, search, ['invoiceNumber', 'customerName', 'customerPhone', 'itemName', 'status', 'description']);
   if (statusFilter) filtered = filtered.filter((s) => saleStatus(s) === statusFilter);
 
   const { receivedTotal, pendingTotal } = useMemo(() => {
@@ -594,8 +684,15 @@ export default function Sales() {
   }, [data]);
 
   const openAdd = () => { setEditing(null); setFormOpen(true); };
-  const openEdit = (s) => { setEditing(s); setFormOpen(true); };
+  // Bills open the bill form; sales recorded without a bill open the quick form.
+  const openEdit = (s) => {
+    if (s.invoice) { setEditing(s); setFormOpen(true); }
+    else { setEditingQuick(s); setQuickOpen(true); }
+  };
+  const openMakeBill = (s) => { setEditing(s); setFormOpen(true); };
   const closeForm = () => { setFormOpen(false); setEditing(null); };
+  const openQuick = () => { setEditingQuick(null); setQuickOpen(true); };
+  const closeQuick = () => { setQuickOpen(false); setEditingQuick(null); };
 
   const incomePayload = (sale, { amount, date, paymentMethod }) => ({
     source: 'Sale',
@@ -604,7 +701,7 @@ export default function Sales() {
     paymentMethod: paymentMethod || '',
     reference: sale.invoiceNumber || sale.id,
     saleId: sale.id,
-    description: `Sale ${sale.invoiceNumber || ''}: ${sale.itemName || ''}${sale.customerName ? ' — ' + sale.customerName : ''}`.trim(),
+    description: `Sale${sale.invoiceNumber ? ' ' + sale.invoiceNumber : ''}: ${sale.itemName || ''}${sale.customerName ? ' — ' + sale.customerName : ''}`,
   });
 
   // Finds the bill's customer (picked from the dropdown, else same phone, else same name when
@@ -686,8 +783,10 @@ export default function Sales() {
             description: incomePayload({ ...editing, ...payload }, {}).description,
           });
         }
-        toast.success(`${invoiceNumber} updated`);
+        const isNewBill = !editing.invoice; // a sale recorded without a bill just got one
+        toast.success(isNewBill ? `${invoiceNumber} generated` : `${invoiceNumber} updated`);
         closeForm();
+        if (isNewBill) setShareSale({ ...editing, ...payload });
       } else {
         const id = await add(payload);
         toast.success(`${invoiceNumber} generated`);
@@ -697,6 +796,57 @@ export default function Sales() {
     } catch (e) {
       console.error(e);
       toast.error('Could not save the bill');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSaveQuick = async (form, { customerId: selectedCustomerId } = {}) => {
+    setSubmitting(true);
+    try {
+      const customer = {
+        customerName: form.customerName.trim(),
+        customerPhone: form.customerPhone.trim(),
+        customerAddress: form.customerAddress.trim(),
+      };
+      let customerId = selectedCustomerId || editingQuick?.customerId || '';
+      if (customer.customerName) {
+        try {
+          const result = await syncCustomer(customer, selectedCustomerId);
+          customerId = result.id;
+          if (result.created) toast.success(`${customer.customerName} added to Customers`);
+        } catch {
+          toast.error('Sale will be saved, but the customer could not be added to Customers');
+        }
+      }
+
+      const payload = {
+        date: form.date,
+        customerId,
+        ...customer,
+        itemName: form.itemName.trim(),
+        quantity: Number(form.quantity) || 1,
+        unitPrice: Number(form.unitPrice) || 0,
+        totalAmount: Number(form.totalAmount) || 0,
+        paymentMethod: form.paymentMethod || '',
+        description: form.description.trim(),
+      };
+      const income = { amount: payload.totalAmount, date: payload.date, paymentMethod: payload.paymentMethod };
+
+      if (editingQuick) {
+        await update(editingQuick.id, payload);
+        const linked = linkedIncomeOf(editingQuick, incomeData);
+        if (linked.length === 1) await updateIncome(linked[0].id, incomePayload({ ...editingQuick, ...payload }, income));
+        toast.success('Sale updated');
+      } else {
+        const id = await add({ ...payload, status: 'Payment Received' });
+        await addIncome(incomePayload({ id, ...payload }, income));
+        toast.success('Sale recorded and added to Income');
+      }
+      closeQuick();
+    } catch (e) {
+      console.error(e);
+      toast.error('Could not save the sale');
     } finally {
       setSubmitting(false);
     }
@@ -805,10 +955,13 @@ export default function Sales() {
         <div>
           <h1 className="text-xl font-bold text-gray-900">Sales</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {data.length} bills · Received: {formatCurrency(receivedTotal)} · Awaiting payment: {formatCurrency(pendingTotal)}
+            {data.length} sales · Received: {formatCurrency(receivedTotal)} · Awaiting payment: {formatCurrency(pendingTotal)}
           </p>
         </div>
-        <Button onClick={openAdd}><Plus size={16} /> New Sale Bill</Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="secondary" onClick={openQuick}><Plus size={16} /> Quick Sale (no bill)</Button>
+          <Button onClick={openAdd}><FileText size={16} /> New Sale Bill</Button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100">
@@ -825,9 +978,9 @@ export default function Sales() {
           <LoadingSpinner />
         ) : filtered.length === 0 ? (
           <EmptyState
-            title="No sale bills"
-            description={search || statusFilter ? 'Try different filters' : 'Generate your first sale bill'}
-            action={!search && !statusFilter && <Button onClick={openAdd} size="sm"><Plus size={14} /> New Sale Bill</Button>}
+            title="No sales"
+            description={search || statusFilter ? 'Try different filters' : 'Generate a sale bill or record a quick sale'}
+            action={!search && !statusFilter && <Button onClick={openAdd} size="sm"><FileText size={14} /> New Sale Bill</Button>}
           />
         ) : (
           <div className="overflow-x-auto">
@@ -855,7 +1008,9 @@ export default function Sales() {
                             {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{s.invoiceNumber || '—'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">
+                          {s.invoiceNumber || <span className="font-sans text-gray-400 italic">No bill</span>}
+                        </td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(s.date)}</td>
                         <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{s.customerName || '—'}</td>
                         <td className="px-4 py-3 text-gray-700 max-w-xs truncate">{s.itemName}</td>
@@ -869,7 +1024,13 @@ export default function Sales() {
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1">
                             <ShareActions sale={s} compact />
-                            <button title="Edit bill" onClick={(e) => { e.stopPropagation(); openEdit(s); }}
+                            {!s.invoice && (
+                              <button title="Generate bill for this sale" onClick={(e) => { e.stopPropagation(); openMakeBill(s); }}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+                                <FileText size={15} />
+                              </button>
+                            )}
+                            <button title={s.invoice ? 'Edit bill' : 'Edit sale'} onClick={(e) => { e.stopPropagation(); openEdit(s); }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
                               <Pencil size={15} />
                             </button>
@@ -899,9 +1060,15 @@ export default function Sales() {
       </div>
 
       <Modal open={formOpen} onClose={closeForm} size="xl"
-        title={editing ? `Edit Sale Bill${editing.invoiceNumber ? ' — ' + editing.invoiceNumber : ''}` : 'New Sale Bill'}>
+        title={!editing ? 'New Sale Bill' : editing.invoice ? `Edit Sale Bill — ${editing.invoiceNumber}` : 'Generate Bill for Sale'}>
         {formOpen && (
           <SaleBillForm sale={editing} customers={customers} onSubmit={handleSaveBill} onCancel={closeForm} loading={submitting} />
+        )}
+      </Modal>
+
+      <Modal open={quickOpen} onClose={closeQuick} size="md" title={editingQuick ? 'Edit Sale' : 'Quick Sale (no bill)'}>
+        {quickOpen && (
+          <QuickSaleForm sale={editingQuick} customers={customers} onSubmit={handleSaveQuick} onCancel={closeQuick} loading={submitting} />
         )}
       </Modal>
 
